@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal Test</title>
+</head>
+<body>
+    <h1>Testing API</h1>
+    <button onclick="test()">Test Server</button>
+    <pre id="output"></pre>
+    
+    <script>
+        async function test() {
+            const output = document.getElementById('output');
+            output.textContent = 'Testing...';
+            
+            try {
+                console.log('Fetching /api/health...');
+                const response = await fetch('/api/health');
+                console.log('Response:', response);
+                
+                const data = await response.json();
+                console.log('Data:', data);
+                
+                output.textContent = 'SUCCESS!\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                console.error('Error:', error);
+                output.textContent = 'ERROR: ' + error.message + '\n\nCheck console (F12) for details';
+            }
+        }
+        
+        // Auto test on load
+        window.addEventListener('load', () => {
+            setTimeout(test, 500);
+        });
+    </script>
+</body>
+</html>

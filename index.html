@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareerCraft - Build Your Future</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%2300d9ff;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%237000ff;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0f'/%3E%3Ctext x='50' y='70' font-family='Arial, sans-serif' font-size='60' font-weight='bold' fill='url(%23grad)' text-anchor='middle'%3ECC%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">Career<span>Craft</span></div>
+            <div class="nav-center">
+                <div class="search-box">
+                    <input type="text" placeholder="Search for companies..." class="search-input">
+                    <button class="search-btn">
+                        <img src="https://api.iconify.design/lucide:search.svg?color=white" width="20" height="20" alt="Search">
+                    </button>
+                </div>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#home" class="nav-link active">
+                    <img src="https://api.iconify.design/lucide:home.svg?color=%23b4b4c5" width="18" height="18" alt="Home">
+                    Home
+                </a></li>
+                <li><a href="#templates" class="nav-link" onclick="showTemplates(event)">
+                    <img src="https://api.iconify.design/lucide:file-text.svg?color=%23b4b4c5" width="18" height="18" alt="Templates">
+                    Templates
+                </a></li>
+                <li><a href="https://www.linkedin.com" class="nav-link" target="_blank" rel="noopener noreferrer">
+                    <img src="https://api.iconify.design/mdi:linkedin.svg?color=%23b4b4c5" width="18" height="18" alt="LinkedIn">
+                    LinkedIn
+                </a></li>
+            </ul>
+            <div class="nav-actions" id="navActions">
+                <!-- Show when logged out -->
+                <div class="auth-buttons" id="authButtons">
+                    <button class="btn-nav btn-signin" onclick="openModal('signin')">Sign In</button>
+                    <button class="btn-nav btn-signup" onclick="openModal('signup')">Create Account</button>
+                </div>
+                <!-- Show when logged in -->
+                <div class="user-menu" id="userMenu" style="display: none;">
+                    <img src="https://api.iconify.design/lucide:user-circle.svg?color=%2300d9ff" width="32" height="32" alt="User" class="user-avatar" id="userAvatar">
+                    <span class="user-name" id="userName">User</span>
+                    <button class="btn-nav btn-logout" onclick="handleLogout()">Logout</button>
+                </div>
+            </div>
+            <!-- <button class="mobile-menu-toggle">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button> -->
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="hero-content">
+            <h1 class="glitch" data-text="CareerCraft">CareerCraft</h1>
+            <p class="tagline">Build Your Future, One Skill at a Time</p>
+            <div class="cta-buttons">
+                <button class="btn btn-primary" onclick="openModal('signup')">
+                    <img src="https://api.iconify.design/lucide:user-plus.svg?color=white" width="20" height="20" alt="Create Account">
+                    Create Account
+                </button>
+                <button class="btn btn-secondary" onclick="openModal('upload')">
+                    <img src="https://api.iconify.design/lucide:upload.svg?color=%2300d9ff" width="20" height="20" alt="Upload">
+                    Upload Resume
+                </button>
+                <button class="btn btn-linkedin" id="linkedinBtn" onclick="linkLinkedIn()">
+                    <img src="https://api.iconify.design/mdi:linkedin.svg?color=white" width="20" height="20" alt="LinkedIn">
+                    <span id="linkedinBtnText">Link LinkedIn</span>
+                </button>
+            </div>
+            <div class="quick-stats">
+                <div class="stat-item">
+                    <h3>13K+</h3>
+                    <p>Active Users</p>
+                </div>
+                <div class="stat-item">
+                    <h3>101+</h3>
+                    <p>Companies</p>
+                </div>
+                <div class="stat-item">
+                    <h3>95%</h3>
+                    <p>Success Rate</p>
+                </div>
+            </div>
+        </div>
+        <div class="animated-bg">
+            <div class="circle circle-1"></div>
+            <div class="circle circle-2"></div>
+            <div class="circle circle-3"></div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">Why Choose CareerCraft?</h2>
+            <div class="features-grid">
+                <!-- <div class="feature-card">
+                    <div class="icon">🚀</div>
+                    <h3>Fast Track Learning</h3>
+                    <p>Accelerate your career with industry-focused courses</p>
+                </div> -->
+                <div class="feature-card">
+                    <div class="icon">💼</div>
+                    <h3>Career Support</h3>
+                    <p>Get personalized guidance from industry experts</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🎯</div>
+                    <h3>Job Ready Skills</h3>
+                    <p>Learn practical skills that employers demand</p>
+                </div>
+                <!-- <div class="feature-card">
+                    <div class="icon">🌟</div>
+                    <h3>Certification</h3>
+                    <p>Earn recognized certificates to boost your resume</p>
+                </div> -->
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="about">
+        <div class="container">
+            <h2 class="section-title">About CareerCraft</h2>
+            <p class="about-text">
+                We empower individuals to transform their careers through cutting-edge technology education. 
+                Our platform combines expert instruction, hands-on projects, and career mentorship to help you 
+                achieve your professional goals.
+            </p>
+        </div>
+    </section>
+
+    <!-- Resume Templates Section -->
+    <section id="templates" class="templates-section">
+        <div class="container">
+            <h2 class="section-title">Resume Templates</h2>
+            <p class="section-subtitle">Choose your target job role to see recommended templates</p>
+            
+            <!-- Job Role Selector -->
+            <div class="role-selector">
+                <button class="role-btn active" onclick="filterTemplates('all')">All Templates</button>
+                <button class="role-btn" onclick="filterTemplates('data-analyst')">Data Analyst</button>
+                <button class="role-btn" onclick="filterTemplates('software-developer')">Software Developer</button>
+                <button class="role-btn" onclick="filterTemplates('marketing')">Marketing</button>
+                <button class="role-btn" onclick="filterTemplates('designer')">Designer</button>
+            </div>
+
+            <!-- Templates Grid -->
+            <div class="templates-grid">
+                <!-- Template 1 - Data Analyst -->
+                <div class="template-card" data-role="data-analyst">
+                    <div class="template-preview">
+                        <div class="template-img">
+                            <div class="resume-mockup">
+                                <div class="mockup-header"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line short"></div>
+                                <div class="mockup-section"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line"></div>
+                            </div>
+                        </div>
+                        <div class="template-badge">Analytics Focused</div>
+                    </div>
+                    <div class="template-info">
+                        <h3>Data Pro Template</h3>
+                        <p>Perfect for Data Analysts - highlights technical skills, tools, and project metrics</p>
+                        <div class="template-tags">
+                            <span class="tag">Excel</span>
+                            <span class="tag">SQL</span>
+                            <span class="tag">Python</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadTemplate('data-pro')">
+                            <img src="https://api.iconify.design/lucide:download.svg?color=white" width="18" height="18" alt="Download">
+                            Use Template
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Template 2 - Data Analyst -->
+                <div class="template-card" data-role="data-analyst">
+                    <div class="template-preview">
+                        <div class="template-img blue">
+                            <div class="resume-mockup">
+                                <div class="mockup-header"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line short"></div>
+                                <div class="mockup-section"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line"></div>
+                            </div>
+                        </div>
+                        <div class="template-badge">Modern & Clean</div>
+                    </div>
+                    <div class="template-info">
+                        <h3>Analytics Expert</h3>
+                        <p>Showcase dashboards, visualizations, and data-driven achievements</p>
+                        <div class="template-tags">
+                            <span class="tag">Tableau</span>
+                            <span class="tag">R</span>
+                            <span class="tag">Statistics</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadTemplate('analytics-expert')">
+                            <img src="https://api.iconify.design/lucide:download.svg?color=white" width="18" height="18" alt="Download">
+                            Use Template
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Template 3 - Software Developer -->
+                <div class="template-card" data-role="software-developer">
+                    <div class="template-preview">
+                        <div class="template-img green">
+                            <div class="resume-mockup">
+                                <div class="mockup-header"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line short"></div>
+                                <div class="mockup-section"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line"></div>
+                            </div>
+                        </div>
+                        <div class="template-badge">Tech Stack</div>
+                    </div>
+                    <div class="template-info">
+                        <h3>Dev Portfolio</h3>
+                        <p>Highlight coding projects, GitHub contributions, and tech skills</p>
+                        <div class="template-tags">
+                            <span class="tag">JavaScript</span>
+                            <span class="tag">React</span>
+                            <span class="tag">Node.js</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadTemplate('dev-portfolio')">
+                            <img src="https://api.iconify.design/lucide:download.svg?color=white" width="18" height="18" alt="Download">
+                            Use Template
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Template 4 - Marketing -->
+                <div class="template-card" data-role="marketing">
+                    <div class="template-preview">
+                        <div class="template-img orange">
+                            <div class="resume-mockup">
+                                <div class="mockup-header"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line short"></div>
+                                <div class="mockup-section"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line"></div>
+                            </div>
+                        </div>
+                        <div class="template-badge">Campaign Focused</div>
+                    </div>
+                    <div class="template-info">
+                        <h3>Marketing Maven</h3>
+                        <p>Showcase campaigns, ROI metrics, and creative strategies</p>
+                        <div class="template-tags">
+                            <span class="tag">SEO</span>
+                            <span class="tag">Analytics</span>
+                            <span class="tag">Content</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadTemplate('marketing-maven')">
+                            <img src="https://api.iconify.design/lucide:download.svg?color=white" width="18" height="18" alt="Download">
+                            Use Template
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Template 5 - Designer -->
+                <div class="template-card" data-role="designer">
+                    <div class="template-preview">
+                        <div class="template-img purple">
+                            <div class="resume-mockup">
+                                <div class="mockup-header"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line short"></div>
+                                <div class="mockup-section"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line"></div>
+                            </div>
+                        </div>
+                        <div class="template-badge">Creative</div>
+                    </div>
+                    <div class="template-info">
+                        <h3>Design Studio</h3>
+                        <p>Perfect for showcasing portfolio, design tools, and creative projects</p>
+                        <div class="template-tags">
+                            <span class="tag">Figma</span>
+                            <span class="tag">Adobe XD</span>
+                            <span class="tag">UI/UX</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadTemplate('design-studio')">
+                            <img src="https://api.iconify.design/lucide:download.svg?color=white" width="18" height="18" alt="Download">
+                            Use Template
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Template 6 - Data Analyst -->
+                <div class="template-card" data-role="data-analyst">
+                    <div class="template-preview">
+                        <div class="template-img teal">
+                            <div class="resume-mockup">
+                                <div class="mockup-header"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line short"></div>
+                                <div class="mockup-section"></div>
+                                <div class="mockup-line"></div>
+                                <div class="mockup-line"></div>
+                            </div>
+                        </div>
+                        <div class="template-badge">Business Intelligence</div>
+                    </div>
+                    <div class="template-info">
+                        <h3>BI Specialist</h3>
+                        <p>Emphasize business insights, KPIs, and analytical methodologies</p>
+                        <div class="template-tags">
+                            <span class="tag">Power BI</span>
+                            <span class="tag">DAX</span>
+                            <span class="tag">ETL</span>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadTemplate('bi-specialist')">
+                            <img src="https://api.iconify.design/lucide:download.svg?color=white" width="18" height="18" alt="Download">
+                            Use Template
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Upload Section -->
+    <section id="upload" class="upload-section">
+        <div class="container">
+            <h2 class="section-title">Upload Your Files</h2>
+            <div class="upload-area">
+                <div class="upload-box" id="uploadBox">
+                    <img src="https://api.iconify.design/lucide:upload.svg?color=%2300d9ff" width="80" height="80" alt="Upload">
+                    <h3>Drag & Drop Files Here</h3>
+                    <p>or click to browse</p>
+                    <input type="file" id="fileInput" multiple hidden>
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        Choose Files
+                    </button>
+                </div>
+                <div class="file-types">
+                    <h4>Supported Files:</h4>
+                    <div class="file-tags">
+                        <span class="file-tag">Resume (PDF, DOC)</span>
+                        <span class="file-tag">Cover Letter</span>
+                        <span class="file-tag">Portfolio</span>
+                        <span class="file-tag">Certificates</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact">
+        <div class="container">
+            <h2 class="section-title">Get In Touch</h2>
+            <form class="contact-form">
+                <input type="text" placeholder="Your Name" required>
+                <input type="email" placeholder="Your Email" required>
+                <textarea placeholder="Your Message" rows="5" required></textarea>
+                <button type="submit" class="btn btn-primary">Send Message</button>
+            </form>
+        </div>
+    </section>
+
+    <!-- Sign In Modal -->
+    <div id="signinModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('signin')">&times;</button>
+            <h2>Sign In</h2>
+            <div id="signinError" class="error-message" style="display: none;"></div>
+            <form class="auth-form" id="signinForm" onsubmit="handleSignIn(event)">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" name="password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+                <div class="divider">
+                    <span>or</span>
+                </div>
+                <a href="/auth/google" class="btn btn-google">
+                    <img src="https://api.iconify.design/mdi:google.svg?color=white" width="20" height="20" alt="Google">
+                    Sign in with Google
+                </a>
+                <p class="form-footer">Don't have an account? <a href="#" onclick="switchModal('signin', 'signup')">Create one</a></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Sign Up Modal -->
+    <div id="signupModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('signup')">&times;</button>
+            <h2>Create Account</h2>
+            <div id="signupError" class="error-message" style="display: none;"></div>
+            <form class="auth-form" id="signupForm" onsubmit="handleSignUp(event)">
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" name="name" placeholder="Enter your full name" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" name="password" id="signupPassword" placeholder="Create a password (min 8 characters)" required minlength="8">
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" name="confirmPassword" id="confirmPassword" placeholder="Confirm your password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+                <div class="divider">
+                    <span>or</span>
+                </div>
+                <a href="/auth/google" class="btn btn-google">
+                    <img src="https://api.iconify.design/mdi:google.svg?color=white" width="20" height="20" alt="Google">
+                    Sign up with Google
+                </a>
+                <p class="form-footer">Already have an account? <a href="#" onclick="switchModal('signup', 'signin')">Sign in</a></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('upload')">&times;</button>
+            <h2>📄 AI-Powered Resume Analysis</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 2rem; text-align: center;">
+                Upload your resume and get personalized suggestions with AI
+            </p>
+            <form class="upload-form" id="resumeUploadForm">
+                <div class="upload-box-modal" id="uploadBoxModal">
+                    <img src="https://api.iconify.design/lucide:upload.svg?color=%2300d9ff" width="60" height="60" alt="Upload">
+                    <p>Drag & Drop your Resume or Click to Browse</p>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">PDF format recommended for best results</p>
+                    <input type="file" id="modalFileInput" accept=".pdf" hidden>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalFileInput').click()">
+                        📁 Browse Files
+                    </button>
+                    <div id="selectedFileName" style="margin-top: 12px; color: var(--primary-color); font-weight: 600;"></div>
+                </div>
+                <div class="form-group">
+                    <label>🎯 Target Company (Optional)</label>
+                    <input type="text" id="targetCompanyInput" placeholder="e.g., Google, Amazon, Microsoft..." autocomplete="off">
+                    <div id="companySearchResults" class="company-search-dropdown" style="display: none;"></div>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                        Get company-specific suggestions to increase your chances
+                    </p>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full" disabled id="analyzeBtn">
+                    🤖 Analyze Resume with AI
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Company Details Modal -->
+    <div id="companyModal" class="modal">
+        <div class="modal-content modal-large">
+            <button class="modal-close" onclick="closeModal('company')">&times;</button>
+            <div id="companyDetails">
+                <!-- Company details will be loaded here dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscription Limit Modal -->
+    <div id="subscriptionModal" class="modal">
+        <div class="modal-content subscription-modal">
+            <button class="modal-close" onclick="closeModal('subscription')">&times;</button>
+            <div class="subscription-header">
+                <div class="subscription-icon">🚀</div>
+                <h2>Upgrade to Premium</h2>
+                <p class="subscription-subtitle">You've reached your free view limit!</p>
+            </div>
+            
+            <div class="pricing-container">
+                <div class="pricing-card free-plan">
+                    <div class="plan-badge">Current Plan</div>
+                    <h3>Free Plan</h3>
+                    <div class="price">₹0<span>/month</span></div>
+                    <ul class="features-list">
+                        <li><span class="feature-icon">✓</span> 10 company views</li>
+                        <li><span class="feature-icon">✓</span> Basic information</li>
+                        <li><span class="feature-icon">✓</span> Job listings</li>
+                        <li><span class="feature-icon">✓</span> Resume templates</li>
+                    </ul>
+                </div>
+                
+                <div class="pricing-card premium-plan">
+                    <div class="plan-badge popular">Most Popular</div>
+                    <h3>Premium Plan</h3>
+                    <div class="price">₹149<span>/month</span></div>
+                    <ul class="features-list">
+                        <li><span class="feature-icon">✓</span> <strong>Unlimited</strong> company views</li>
+                        <li><span class="feature-icon">✓</span> Full company details</li>
+                        <li><span class="feature-icon">✓</span> Unlimited job applications</li>
+                        <li><span class="feature-icon">✓</span> All resume templates</li>
+                        <li><span class="feature-icon">✓</span> Priority support</li>
+                        <li><span class="feature-icon">✓</span> No advertisements</li>
+                        <li><span class="feature-icon">✓</span> Advanced filters</li>
+                        <li><span class="feature-icon">✓</span> Save favorites</li>
+                    </ul>
+                    <button class="btn btn-primary btn-full" onclick="handleUpgrade()">
+                        Upgrade to Premium
+                    </button>
+                </div>
+            </div>
+            
+            <div class="subscription-footer">
+                <p>💳 Secure payment • 🔒 Cancel anytime • 💯 Money-back guarantee</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resume Analysis Modal -->
+    <div id="analysisModal" class="modal">
+        <div class="modal-content modal-large analysis-modal">
+            <button class="modal-close" onclick="closeModal('analysis')">&times;</button>
+            <div id="analysisResults">
+                <div class="analysis-loading">
+                    <div class="loader"></div>
+                    <p>🤖 AI is analyzing your resume...</p>
+                    <p class="loading-subtext">This may take a few moments</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscription Banner -->
+    <div id="subscriptionBanner" class="subscription-banner" style="display: none;">
+        <div class="banner-content">
+            <span class="banner-icon">⚡</span>
+            <span class="banner-text">
+                <strong id="remainingViews">10</strong> free views remaining
+            </span>
+            <button class="banner-upgrade-btn" onclick="openModal('subscription')">
+                Upgrade to Premium
+            </button>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 CareerCraft. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="index.js"></script>
+</body>
+</html>

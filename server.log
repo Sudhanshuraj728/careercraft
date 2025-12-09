@@ -1,0 +1,3 @@
+CareerCraft server running at http://localhost:3000 
+MongoDB connected
+SELF_CHECK_OK: {"ok":true,"time":"2025-11-17T14:13:28.501Z"}
