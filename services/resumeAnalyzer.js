@@ -108,27 +108,34 @@ async function analyzeResumeForCompany(resumeText, companyData) {
             }
         });
         
-        const prompt = `Analyze this resume for ${companyData.name} (${companyData.industry || 'Technology'} industry) and respond ONLY with valid JSON:
+        const prompt = `You are an expert resume analyst. Analyze this resume critically and honestly for a position at ${companyData.name} (${companyData.industry || 'Technology'} industry).
 
-RESUME:
+RESUME TEXT:
 ${resumeText.substring(0, 3000)}
 
-JSON FORMAT (respond with ONLY this JSON, no other text):
+SCORING GUIDE:
+- 90-100: Exceptional, ready for top positions
+- 75-89: Strong, but needs minor improvements  
+- 60-74: Good foundation, needs several enhancements
+- 40-59: Needs significant work
+- Below 40: Major restructuring required
+
+Respond with ONLY valid JSON (no markdown, no explanations):
 {
-    "overallScore": 75,
-    "strengths": ["strength1", "strength2", "strength3"],
+    "overallScore": <number 0-100, BE HONEST AND REALISTIC>,
+    "strengths": ["real strength 1", "real strength 2", "real strength 3"],
     "improvements": [
-        {"category": "Skills", "issue": "missing X", "suggestion": "add Y", "priority": "high"}
+        {"category": "Skills|Experience|Education|Format", "issue": "specific problem", "suggestion": "actionable fix", "priority": "high|medium|low"}
     ],
     "companySpecific": [
-        {"point": "suggestion for ${companyData.name}", "reason": "why"}
+        {"point": "specific suggestion for ${companyData.name}", "reason": "why this matters"}
     ],
-    "keywordSuggestions": ["keyword1", "keyword2"],
-    "formattingTips": ["tip1", "tip2"],
-    "summaryRecommendation": "Brief summary of what to improve."
+    "keywordSuggestions": ["relevant keyword 1", "relevant keyword 2"],
+    "formattingTips": ["specific formatting improvement 1", "specific formatting improvement 2"],
+    "summaryRecommendation": "One sentence on main improvement area"
 }
 
-Keep responses concise. Focus on ${companyData.name}'s industry.`;
+IMPORTANT: Give an HONEST score based on actual resume quality. Don't default to 75. Vary your scores based on real assessment.`;
 
         let result;
         try {

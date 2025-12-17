@@ -1199,7 +1199,131 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize resume upload functionality
     initializeResumeUpload();
+    
+    // Initialize contact form
+    initializeContactForm();
 });
+
+// Contact form handler
+function initializeContactForm() {
+    // Wait a bit to ensure DOM is fully loaded
+    setTimeout(() => {
+        const form = document.getElementById('contactForm');
+        
+        if (!form) {
+            console.error('Contact form not found');
+            return;
+        }
+        
+        console.log('✅ Contact form found and initialized');
+        
+        // Add input listeners to track typing
+        const nameInput = form.querySelector('[name="contactName"]');
+        const emailInput = form.querySelector('[name="contactEmail"]');
+        const messageInput = form.querySelector('[name="contactMessage"]');
+        
+        if (nameInput) {
+            nameInput.addEventListener('input', (e) => {
+                console.log('✏️ Name typed:', e.target.value);
+            });
+        }
+        
+        if (emailInput) {
+            emailInput.addEventListener('input', (e) => {
+                console.log('✏️ Email typed:', e.target.value);
+            });
+        }
+        
+        if (messageInput) {
+            messageInput.addEventListener('input', (e) => {
+                console.log('✏️ Message typed:', e.target.value);
+            });
+        }
+        
+        // Intercept button click instead of form submit
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Read values immediately on button click
+                const nameValue = nameInput ? nameInput.value.trim() : '';
+                const emailValue = emailInput ? emailInput.value.trim() : '';
+                const messageValue = messageInput ? messageInput.value.trim() : '';
+                
+                console.log('🎯 Values at button click:', { nameValue, emailValue, messageValue });
+                
+                await handleContactSubmit(e, nameValue, emailValue, messageValue, form);
+            });
+        }
+    }, 500);
+}
+
+async function handleContactSubmit(event, name, email, message, form) {
+    console.log('📝 Processing submission with values:', { name, email, message });
+    
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const successDiv = document.getElementById('contactSuccess');
+    
+    // Validate
+    if (name.length < 2) {
+        alert('❌ Please enter your name (at least 2 characters)');
+        event.target.querySelector('[name="contactName"]').focus();
+        return;
+    }
+    
+    if (!email.includes('@')) {
+        alert('❌ Please enter a valid email address');
+        event.target.querySelector('[name="contactEmail"]').focus();
+        return;
+    }
+    
+    if (message.length < 10) {
+        alert('❌ Please enter a message (at least 10 characters)');
+        event.target.querySelector('[name="contactMessage"]').focus();
+        return;
+    }
+    
+    // Disable submit button
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending...';
+    
+    try {
+        const response = await fetch('/api/contact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, message })
+        });
+        
+        const data = await response.json();
+        console.log('📨 Server response:', data);
+        
+        if (data.success) {
+            // Show success message
+            successDiv.style.display = 'block';
+            successDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Clear form
+            event.target.reset();
+            
+            // Hide success after 5 seconds
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 5000);
+            
+            console.log('✅ Message sent successfully!');
+        } else {
+            alert('❌ ' + (data.error || 'Failed to send message'));
+        }
+    } catch (error) {
+        console.error('❌ Error sending message:', error);
+        alert('❌ Network error. Please check your connection and try again.');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send Message';
+    }
+}
 
 // Resume upload and analysis functionality
 let uploadedResume = null;
@@ -1208,12 +1332,21 @@ let selectedCompanyForAnalysis = null;
 function initializeResumeUpload() {
     const fileInput = document.getElementById('modalFileInput');
     const uploadBox = document.getElementById('uploadBoxModal');
+    const browseBtn = document.getElementById('browseFilesBtn');
     const form = document.getElementById('resumeUploadForm');
     const analyzeBtn = document.getElementById('analyzeBtn');
     const fileNameDisplay = document.getElementById('selectedFileName');
     const companyInput = document.getElementById('targetCompanyInput');
     
     if (!fileInput || !uploadBox || !form) return;
+    
+    // Browse button click - prevent event bubbling
+    if (browseBtn) {
+        browseBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent triggering uploadBox click
+            fileInput.click();
+        });
+    }
     
     // Drag and drop
     uploadBox.addEventListener('dragover', (e) => {
@@ -1411,6 +1544,11 @@ async function analyzeResume() {
         // Display results
         displayAnalysisResults(analysisData.data);
         
+        // Fetch LinkedIn profiles for the company
+        if (analysisData.data.company) {
+            fetchCompanyEmployees(analysisData.data.company.name);
+        }
+        
         // Close upload modal
         closeModal('upload');
         
@@ -1560,6 +1698,9 @@ function displayAnalysisResults(data) {
         </div>
         ` : ''}
         
+        <!-- LinkedIn Employees Section (will be populated dynamically) -->
+        <div id="linkedinEmployeesSection"></div>
+        
         <div style="text-align: center; margin-top: 2rem;">
             <button class="btn btn-primary" onclick="closeModal('analysis'); openModal('upload')">
                 📄 Analyze Another Resume
@@ -1570,3 +1711,142 @@ function displayAnalysisResults(data) {
     document.getElementById('analysisResults').innerHTML = html;
 }
 
+// Fetch and display LinkedIn profiles of company employees
+async function fetchCompanyEmployees(companyName) {
+    const employeesSection = document.getElementById('linkedinEmployeesSection');
+    
+    // Show loading state
+    employeesSection.innerHTML = `
+        <div class="analysis-section">
+            <h3><span class="section-icon">👥</span> Connect with ${companyName} Employees on LinkedIn</h3>
+            <div style="text-align: center; padding: 2rem;">
+                <div class="loading-spinner"></div>
+                <p>Searching for employees...</p>
+            </div>
+        </div>
+    `;
+    
+    try {
+        const response = await fetch(`/api/linkedin/company-employees/${encodeURIComponent(companyName)}`, {
+            credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.linkedinNotConnected) {
+            // User hasn't connected LinkedIn
+            employeesSection.innerHTML = `
+                <div class="analysis-section linkedin-connect-section">
+                    <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                    <div class="linkedin-prompt">
+                        <div class="linkedin-icon">💼</div>
+                        <p><strong>Connect your LinkedIn to see employee profiles!</strong></p>
+                        <p>Get direct access to people working at ${companyName} to expand your network.</p>
+                        <button class="btn btn-linkedin" onclick="linkLinkedIn()">
+                            🔗 Connect LinkedIn Account
+                        </button>
+                    </div>
+                    ${displayNetworkingSuggestions(data.suggestions)}
+                </div>
+            `;
+            return;
+        }
+        
+        if (data.tokenExpired) {
+            // LinkedIn token expired
+            employeesSection.innerHTML = `
+                <div class="analysis-section linkedin-connect-section">
+                    <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                    <div class="linkedin-prompt">
+                        <div class="linkedin-icon">⚠️</div>
+                        <p><strong>Your LinkedIn connection has expired</strong></p>
+                        <p>Reconnect to see employee profiles and expand your network.</p>
+                        <button class="btn btn-linkedin" onclick="linkLinkedIn()">
+                            🔗 Reconnect LinkedIn
+                        </button>
+                    </div>
+                    ${displayNetworkingSuggestions(data.suggestions)}
+                </div>
+            `;
+            return;
+        }
+        
+        if (data.success && data.profiles && data.profiles.length > 0) {
+            // Display employee profiles
+            employeesSection.innerHTML = `
+                <div class="analysis-section">
+                    <h3><span class="section-icon">👥</span> ${companyName} Employees on LinkedIn</h3>
+                    <div class="employees-grid">
+                        ${data.profiles.map(profile => `
+                            <div class="employee-card">
+                                ${profile.pictureUrl ? `
+                                    <img src="${profile.pictureUrl}" alt="${profile.name}" class="employee-avatar">
+                                ` : `
+                                    <div class="employee-avatar-placeholder">
+                                        ${profile.name.charAt(0).toUpperCase()}
+                                    </div>
+                                `}
+                                <div class="employee-info">
+                                    <div class="employee-name">${profile.name}</div>
+                                    <div class="employee-position">${profile.currentPosition || profile.headline}</div>
+                                    ${profile.connectionDegree !== 'unknown' ? `
+                                        <div class="connection-degree">${profile.connectionDegree}° connection</div>
+                                    ` : ''}
+                                </div>
+                                <a href="${profile.profileUrl}" target="_blank" class="btn-connect">
+                                    View Profile →
+                                </a>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${displayNetworkingSuggestions(data.suggestions)}
+                </div>
+            `;
+        } else {
+            // No profiles found or API limitation
+            employeesSection.innerHTML = `
+                <div class="analysis-section">
+                    <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                    <div class="info-message">
+                        <p>We couldn't fetch employee profiles automatically, but here are some great ways to connect:</p>
+                    </div>
+                    ${displayNetworkingSuggestions(data.suggestions)}
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        console.error('Error fetching employees:', error);
+        employeesSection.innerHTML = `
+            <div class="analysis-section">
+                <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                <div class="error-message">
+                    <p>Unable to fetch employee profiles at the moment.</p>
+                </div>
+            </div>
+        `;
+    }
+}
+
+// Display networking suggestions
+function displayNetworkingSuggestions(suggestions) {
+    if (!suggestions || !suggestions.tips) return '';
+    
+    return `
+        <div class="networking-tips">
+            <h4>${suggestions.message}</h4>
+            <div class="tips-grid">
+                ${suggestions.tips.map(tip => `
+                    <a href="${tip.action}" target="_blank" class="tip-card">
+                        <div class="tip-icon">${tip.icon}</div>
+                        <div class="tip-content">
+                            <div class="tip-title">${tip.title}</div>
+                            <div class="tip-description">${tip.description}</div>
+                        </div>
+                        <div class="tip-arrow">→</div>
+                    </a>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}

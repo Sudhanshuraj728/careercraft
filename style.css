@@ -661,6 +661,10 @@ body {
     text-align: center;
     transition: all 0.3s ease;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .upload-box:hover {
@@ -1909,6 +1913,10 @@ body {
     text-align: center;
     transition: all 0.3s ease;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .upload-box-modal:hover {
@@ -2060,4 +2068,218 @@ body {
 .scroll-reveal.active {
     opacity: 1;
     transform: translateY(0);
+}
+
+/* LinkedIn Employees Section */
+.linkedin-connect-section {
+    background: linear-gradient(135deg, rgba(0, 119, 181, 0.1) 0%, rgba(0, 217, 255, 0.1) 100%);
+    border-left: 4px solid #0077b5;
+}
+
+.linkedin-prompt {
+    text-align: center;
+    padding: 2rem;
+}
+
+.linkedin-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.btn-linkedin {
+    background: #0077b5;
+    color: white;
+    padding: 0.8rem 2rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s;
+    margin-top: 1rem;
+}
+
+.btn-linkedin:hover {
+    background: #005885;
+    transform: translateY(-2px);
+}
+
+.employees-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.employee-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.employee-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0, 119, 181, 0.3);
+    border-color: #0077b5;
+}
+
+.employee-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 1rem;
+    border: 3px solid #0077b5;
+}
+
+.employee-avatar-placeholder {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0077b5 0%, #00a0dc 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 1rem;
+}
+
+.employee-info {
+    flex: 1;
+    margin-bottom: 1rem;
+}
+
+.employee-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 0.5rem;
+}
+
+.employee-position {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 0.5rem;
+}
+
+.connection-degree {
+    font-size: 0.8rem;
+    color: #0077b5;
+    font-weight: 500;
+}
+
+.btn-connect {
+    display: inline-block;
+    background: #0077b5;
+    color: white;
+    padding: 0.5rem 1.5rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background 0.3s;
+}
+
+.btn-connect:hover {
+    background: #005885;
+}
+
+.networking-tips {
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.networking-tips h4 {
+    color: white;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+}
+
+.tips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.tip-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 1.2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    text-decoration: none;
+    color: white;
+    transition: all 0.3s;
+}
+
+.tip-card:hover {
+    background: rgba(0, 119, 181, 0.1);
+    border-color: #0077b5;
+    transform: translateX(5px);
+}
+
+.tip-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.tip-content {
+    flex: 1;
+}
+
+.tip-title {
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+    color: white;
+}
+
+.tip-description {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.4;
+}
+
+.tip-arrow {
+    font-size: 1.5rem;
+    color: #0077b5;
+    flex-shrink: 0;
+}
+
+.info-message {
+    background: rgba(0, 119, 181, 0.1);
+    border-left: 4px solid #0077b5;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.info-message p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.loading-spinner {
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top: 4px solid #0077b5;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }

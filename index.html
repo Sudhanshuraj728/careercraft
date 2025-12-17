@@ -107,14 +107,19 @@
                     <p>Accelerate your career with industry-focused courses</p>
                 </div> -->
                 <div class="feature-card">
-                    <div class="icon">💼</div>
-                    <h3>Career Support</h3>
-                    <p>Get personalized guidance from industry experts</p>
+                    <div class="icon">🤖</div>
+                    <h3>AI-Powered Analysis</h3>
+                    <p>Get instant, intelligent feedback on your resume with advanced AI</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">🎯</div>
-                    <h3>Job Ready Skills</h3>
-                    <p>Learn practical skills that employers demand</p>
+                    <h3>Company-Specific Tips</h3>
+                    <p>Tailored suggestions to match your target company's requirements</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🔗</div>
+                    <h3>LinkedIn Integration</h3>
+                    <p>Connect with professionals and expand your network effortlessly</p>
                 </div>
                 <!-- <div class="feature-card">
                     <div class="icon">🌟</div>
@@ -130,9 +135,10 @@
         <div class="container">
             <h2 class="section-title">About CareerCraft</h2>
             <p class="about-text">
-                We empower individuals to transform their careers through cutting-edge technology education. 
-                Our platform combines expert instruction, hands-on projects, and career mentorship to help you 
-                achieve your professional goals.
+                CareerCraft revolutionizes your job search with AI-powered resume analysis and intelligent career insights. 
+                Our platform uses advanced artificial intelligence to evaluate your resume, provides company-specific optimization tips, 
+                and connects you with professionals through seamless LinkedIn integration. Get personalized feedback, discover what 
+                top companies are looking for, and network with employees at your dream companies—all in one powerful platform.
             </p>
         </div>
     </section>
@@ -368,10 +374,13 @@
     <section id="contact" class="contact">
         <div class="container">
             <h2 class="section-title">Get In Touch</h2>
-            <form class="contact-form">
-                <input type="text" placeholder="Your Name" required>
-                <input type="email" placeholder="Your Email" required>
-                <textarea placeholder="Your Message" rows="5" required></textarea>
+            <div id="contactSuccess" style="display: none; color: #00d9ff; text-align: center; margin-bottom: 1rem; padding: 1rem; background: rgba(0, 217, 255, 0.1); border-radius: 10px;">
+                ✅ Thank you! Your message has been sent successfully. We'll get back to you soon!
+            </div>
+            <form class="contact-form" id="contactForm">
+                <input type="text" id="contactName" name="contactName" placeholder="Your Name">
+                <input type="email" id="contactEmail" name="contactEmail" placeholder="Your Email">
+                <textarea id="contactMessage" name="contactMessage" placeholder="Your Message" rows="5"></textarea>
                 <button type="submit" class="btn btn-primary">Send Message</button>
             </form>
         </div>
@@ -455,7 +464,7 @@
                     <p>Drag & Drop your Resume or Click to Browse</p>
                     <p style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">PDF format recommended for best results</p>
                     <input type="file" id="modalFileInput" accept=".pdf" hidden>
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalFileInput').click()">
+                    <button type="button" class="btn btn-secondary" id="browseFilesBtn">
                         📁 Browse Files
                     </button>
                     <div id="selectedFileName" style="margin-top: 12px; color: var(--primary-color); font-weight: 600;"></div>

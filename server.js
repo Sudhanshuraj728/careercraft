@@ -1,21 +1,43 @@
 require('dotenv').config();
+
+// Validate environment variables first
+const { validateEnv } = require('./config/validateEnv');
+validateEnv();
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const helmet = require('helmet');
+const morgan = require('morgan');
 const multer = require('multer');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const passport = require('./config/passport');
+const logger = require('./utils/logger');
+const { createIndexes } = require('./config/dbIndexes');
+const { errorHandler, notFoundHandler, asyncHandler } = require('./middleware/errorHandler');
+const { apiLimiter, aiAnalysisLimiter, authLimiter, uploadLimiter } = require('./middleware/rateLimiter');
+const { registerValidation, loginValidation, resumeAnalysisValidation, companySearchValidation } = require('./middleware/validation');
 const User = require('./models/User');
 const Company = require('./models/Company');
 const Subscription = require('./models/Subscription');
+const Contact = require('./models/Contact');
 const resumeAnalyzer = require('./services/resumeAnalyzer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/careercraft';
+
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable for development, configure properly for production
+  crossOriginEmbedderPolicy: false
+}));
+
+// Logging middleware
+app.use(morgan('combined', { stream: logger.stream }));
 
 // Increase server timeout for AI analysis (60 seconds)
 app.use((req, res, next) => {
@@ -26,8 +48,15 @@ app.use((req, res, next) => {
 
 // Connect to MongoDB
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(async () => {
+    logger.info('MongoDB connected successfully');
+    // Create indexes
+    await createIndexes();
+  })
+  .catch(err => {
+    logger.error('MongoDB connection error:', err);
+    process.exit(1);
+  });
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -79,78 +108,48 @@ function isAuthenticated(req, res, next) {
 
 // --- Auth Routes ---
 // POST /api/auth/register - Register new user
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body || {};
-    
-    // Validation
-    if (!name?.trim() || !email?.trim() || !password) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'All fields are required',
-        fields: { name: !name, email: !email, password: !password }
-      });
-    }
-    
-    const isValidEmail = (e) => typeof e === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
-    const isValidPassword = (p) => typeof p === 'string' && p.length >= 8;
-    
-    if (!isValidEmail(email)) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Invalid email format' 
-      });
-    }
-    if (!isValidPassword(password)) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Password must be at least 8 characters' 
-      });
-    }
-    
-    // Check if user exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(409).json({ 
-        success: false,
-        error: 'Email already registered' 
-      });
-    }
-    
-    // Create user
-    const user = await User.create({
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      password
-    });
-    
-    // Log user in automatically
-    req.login(user, (err) => {
-      if (err) {
-        return res.status(500).json({ 
-          success: false,
-          error: 'Registration successful but login failed' 
-        });
-      }
-      res.status(201).json({
-        success: true,
-        message: 'Registration successful',
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          avatar: user.avatar
-        }
-      });
-    });
-  } catch (err) {
-    console.error('Register error:', err);
-    res.status(500).json({ 
+app.post('/api/auth/register', authLimiter, registerValidation, asyncHandler(async (req, res) => {
+  const { name, email, password } = req.body;
+  
+  // Check if user exists
+  const existingUser = await User.findOne({ email: email.toLowerCase() });
+  if (existingUser) {
+    return res.status(409).json({ 
       success: false,
-      error: 'Registration failed. Please try again.' 
+      error: 'Email already registered' 
     });
   }
-});
+  
+  // Create user
+  const user = await User.create({
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    password
+  });
+  
+  logger.info(`New user registered: ${email}`);
+  
+  // Log user in automatically
+  req.login(user, (err) => {
+    if (err) {
+      logger.error('Auto-login failed after registration:', err);
+      return res.status(500).json({ 
+        success: false,
+        error: 'Registration successful but login failed' 
+      });
+    }
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar
+      }
+    });
+  });
+}));
 
 // POST /api/auth/login - Login user
 app.post('/api/auth/login', (req, res, next) => {
@@ -235,6 +234,63 @@ app.get('/api/auth/user', isAuthenticated, (req, res) => {
   });
 });
 
+// POST /api/contact - Submit contact form
+app.post('/api/contact', apiLimiter, asyncHandler(async (req, res) => {
+  const { name, email, message } = req.body;
+  
+  // Validate inputs
+  if (!name || !email || !message) {
+    return res.status(400).json({
+      success: false,
+      error: 'Name, email, and message are required'
+    });
+  }
+  
+  if (name.length < 2 || name.length > 100) {
+    return res.status(400).json({
+      success: false,
+      error: 'Name must be between 2 and 100 characters'
+    });
+  }
+  
+  if (message.length < 10 || message.length > 1000) {
+    return res.status(400).json({
+      success: false,
+      error: 'Message must be between 10 and 1000 characters'
+    });
+  }
+  
+  // Create contact message
+  const contact = await Contact.create({
+    name: name.trim(),
+    email: email.toLowerCase().trim(),
+    message: message.trim(),
+    status: 'new'
+  });
+  
+  logger.info(`New contact message from: ${email}`);
+  
+  res.json({
+    success: true,
+    message: 'Thank you for your message! We will get back to you soon.',
+    data: {
+      id: contact._id
+    }
+  });
+}));
+
+// GET /api/admin/contacts - Get all contact messages (admin only)
+app.get('/api/admin/contacts', asyncHandler(async (req, res) => {
+  const contacts = await Contact.find()
+    .sort({ createdAt: -1 })
+    .limit(100);
+  
+  res.json({
+    success: true,
+    data: contacts
+  });
+}));
+
 // Google OAuth routes
 app.get('/auth/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
@@ -261,8 +317,9 @@ app.get('/auth/linkedin', (req, res) => {
   
   // Allow LinkedIn OAuth even if not logged in (will create/link account)
   const redirectUri = encodeURIComponent(process.env.LINKEDIN_CALLBACK_URL);
-  // Use r_liteprofile and r_emailaddress for standard LinkedIn Sign In
-  const scope = encodeURIComponent('r_liteprofile r_emailaddress');
+  // Use OpenID Connect scopes - openid, profile, email (new LinkedIn API)
+  // These are the valid scopes as of 2024+
+  const scope = encodeURIComponent('openid profile email');
   
   // Store if user was already logged in
   req.session.linkedinFlow = {
@@ -308,52 +365,50 @@ app.get('/auth/linkedin/callback', async (req, res) => {
       return res.redirect('/?error=linkedin_failed');
     }
     
-    // Get user profile from LinkedIn (v2 API)
-    const [profileResponse, emailResponse] = await Promise.all([
-      fetch('https://api.linkedin.com/v2/me', {
-        headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
-      }),
-      fetch('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
-        headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
-      })
-    ]);
+    // Get user profile using OpenID Connect userinfo endpoint
+    const userinfoResponse = await fetch('https://api.linkedin.com/v2/userinfo', {
+      headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+    });
     
-    const profileData = await profileResponse.json();
-    const emailData = await emailResponse.json();
+    const userinfo = await userinfoResponse.json();
     
-    console.log('LinkedIn profile data:', profileData);
-    console.log('LinkedIn email data:', emailData);
+    console.log('LinkedIn userinfo:', userinfo);
     
-    // Extract email from the response
-    const email = emailData?.elements?.[0]?.['handle~']?.emailAddress;
+    // Extract user data from OIDC response
+    const email = userinfo.email;
+    const fullName = userinfo.name || userinfo.given_name || email?.split('@')[0];
+    const firstName = userinfo.given_name || '';
+    const lastName = userinfo.family_name || '';
+    const linkedinId = userinfo.sub; // "sub" is the unique user ID in OIDC
+    const picture = userinfo.picture || '';
     
     if (!email) {
       return res.redirect('/?error=linkedin_no_email');
     }
     
-    // Extract name from profile
-    const firstName = profileData.localizedFirstName || '';
-    const lastName = profileData.localizedLastName || '';
-    const fullName = `${firstName} ${lastName}`.trim() || email.split('@')[0];
-    const linkedinId = profileData.id;
-    
     const linkedinFlow = req.session.linkedinFlow || {};
+    
+    // Store access token with expiry (LinkedIn tokens typically last 60 days)
+    const tokenExpiry = new Date(Date.now() + (tokenData.expires_in || 5184000) * 1000);
     
     // Check if user was already logged in
     if (linkedinFlow.isExistingUser && linkedinFlow.userId) {
       // Link LinkedIn to existing account
       await User.findByIdAndUpdate(linkedinFlow.userId, {
         linkedinId: linkedinId,
+        linkedinAccessToken: tokenData.access_token,
+        linkedinTokenExpiry: tokenExpiry,
         linkedinProfile: {
           username: firstName || fullName,
-          profileUrl: `https://www.linkedin.com/in/${firstName.toLowerCase() || 'profile'}`,
+          profileUrl: `https://www.linkedin.com/`,
           headline: fullName,
           summary: '',
-          pictureUrl: '',
+          pictureUrl: picture,
           linkedAt: new Date()
         }
       });
       
+      logger.info(`LinkedIn linked to existing user: ${linkedinFlow.userId}`);
       delete req.session.linkedinFlow;
       return res.redirect('/?linkedin=linked');
     }
@@ -367,33 +422,39 @@ app.get('/auth/linkedin/callback', async (req, res) => {
     });
     
     if (user) {
-      // Update existing user with LinkedIn info
+      // Update existing user with LinkedIn info and access token
       user.linkedinId = linkedinId;
+      user.linkedinAccessToken = tokenData.access_token;
+      user.linkedinTokenExpiry = tokenExpiry;
       user.linkedinProfile = {
         username: firstName || fullName,
-        profileUrl: `https://www.linkedin.com/in/${firstName.toLowerCase() || 'profile'}`,
+        profileUrl: `https://www.linkedin.com/`,
         headline: fullName,
         summary: '',
-        pictureUrl: '',
+        pictureUrl: picture,
         linkedAt: new Date()
       };
       await user.save();
+      logger.info(`LinkedIn connected for existing user: ${email}`);
     } else {
       // Create new user with LinkedIn
       user = await User.create({
         name: fullName,
         email: email,
         linkedinId: linkedinId,
-        avatar: '',
+        linkedinAccessToken: tokenData.access_token,
+        linkedinTokenExpiry: tokenExpiry,
+        avatar: picture,
         linkedinProfile: {
           username: firstName || fullName,
-          profileUrl: `https://www.linkedin.com/in/${firstName.toLowerCase() || 'profile'}`,
+          profileUrl: `https://www.linkedin.com/`,
           headline: fullName,
           summary: '',
-          pictureUrl: '',
+          pictureUrl: picture,
           linkedAt: new Date()
         }
       });
+      logger.info(`New user created via LinkedIn: ${email}`);
     }
     
     // Log the user in
@@ -478,6 +539,67 @@ app.get('/api/admin/companies', async (req, res) => {
     console.error('Admin companies error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch companies' });
   }
+});
+
+// --- LinkedIn Integration Endpoints ---
+// GET /api/linkedin/company-employees/:companyName - Get LinkedIn profiles of company employees
+app.get('/api/linkedin/company-employees/:companyName', asyncHandler(async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({
+      success: false,
+      error: 'Please sign in to view LinkedIn profiles'
+    });
+  }
+
+  const { companyName } = req.params;
+  const limit = parseInt(req.query.limit) || 10;
+
+  // Get user with LinkedIn access token
+  const user = await User.findById(req.user._id).select('+linkedinAccessToken +linkedinTokenExpiry');
+
+  if (!user.linkedinAccessToken) {
+    return res.json({
+      success: false,
+      linkedinNotConnected: true,
+      message: 'Please connect your LinkedIn account to see employee profiles',
+      companyName: companyName,
+      suggestions: require('./services/linkedinService').prototype.generateNetworkingSuggestions(companyName)
+    });
+  }
+
+  // Check if token is expired
+  if (user.linkedinTokenExpiry && new Date() > user.linkedinTokenExpiry) {
+    return res.json({
+      success: false,
+      tokenExpired: true,
+      message: 'Your LinkedIn connection has expired. Please reconnect.',
+      companyName: companyName,
+      suggestions: require('./services/linkedinService').prototype.generateNetworkingSuggestions(companyName)
+    });
+  }
+
+  const LinkedInService = require('./services/linkedinService');
+  const linkedinService = new LinkedInService(user.linkedinAccessToken);
+
+  const result = await linkedinService.searchCompanyEmployees(companyName, limit);
+
+  res.json(result);
+}));
+
+// GET /api/linkedin/status - Check if user has LinkedIn connected
+app.get('/api/linkedin/status', (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.json({
+      success: true,
+      connected: false
+    });
+  }
+
+  res.json({
+    success: true,
+    connected: !!req.user.linkedinId,
+    profile: req.user.linkedinProfile || null
+  });
 });
 
 // --- Companies Endpoints ---

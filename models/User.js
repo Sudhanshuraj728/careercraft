@@ -15,6 +15,8 @@ const userSchema = new mongoose.Schema({
     pictureUrl: String,
     linkedAt: Date
   },
+  linkedinAccessToken: { type: String, select: false }, // Stored encrypted, not returned by default
+  linkedinTokenExpiry: { type: Date, select: false },
   avatar: { type: String },
   guestId: { type: String, unique: true, sparse: true }, // For tracking guest users
   createdAt: { type: Date, default: Date.now }
