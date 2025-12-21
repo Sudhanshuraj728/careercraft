@@ -2089,19 +2089,23 @@ body {
 .btn-linkedin {
     background: #0077b5;
     color: white;
-    padding: 0.8rem 2rem;
+    padding: 1rem 2rem;
     border: none;
-    border-radius: 8px;
+    border-radius: 50px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.3s;
+    transition: all 0.3s ease;
     margin-top: 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .btn-linkedin:hover {
     background: #005885;
-    transform: translateY(-2px);
+    transform: translateY(-3px);
+    box-shadow: 0 15px 40px rgba(0, 119, 181, 0.5);
 }
 
 .employees-grid {

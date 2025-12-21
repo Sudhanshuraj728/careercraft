@@ -1701,8 +1701,8 @@ function displayAnalysisResults(data) {
         <!-- LinkedIn Employees Section (will be populated dynamically) -->
         <div id="linkedinEmployeesSection"></div>
         
-        <div style="text-align: center; margin-top: 2rem;">
-            <button class="btn btn-primary" onclick="closeModal('analysis'); openModal('upload')">
+        <div style="text-align: center; margin-top: 3rem; margin-bottom: 2rem; padding: 2rem 0; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+            <button class="btn btn-primary" onclick="closeModal('analysis'); openModal('upload')" style="min-width: 250px; font-size: 1.1rem;">
                 📄 Analyze Another Resume
             </button>
         </div>

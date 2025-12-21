@@ -24,17 +24,19 @@ class LinkedInService {
       
       if (!company) {
         logger.warn(`Company not found on LinkedIn: ${companyName}`);
+        const suggestions = await this.generateNetworkingSuggestions(companyName);
         return {
           success: false,
           message: 'Company not found on LinkedIn',
           profiles: [],
-          suggestions: this.generateNetworkingSuggestions(companyName)
+          suggestions: suggestions
         };
       }
 
       // Method 2: Get company page followers (limited access)
       // This requires specific API permissions
       const profiles = await this.getCompanyFollowers(company.id, limit);
+      const suggestions = await this.generateNetworkingSuggestions(companyName);
       
       return {
         success: true,
@@ -46,18 +48,19 @@ class LinkedInService {
         },
         profiles: profiles,
         count: profiles.length,
-        suggestions: this.generateNetworkingSuggestions(companyName)
+        suggestions: suggestions
       };
       
     } catch (error) {
       logger.error('LinkedIn search error:', error);
       
       // Return helpful suggestions even if API fails
+      const suggestions = await this.generateNetworkingSuggestions(companyName);
       return {
         success: false,
         message: 'LinkedIn search temporarily unavailable',
         profiles: [],
-        suggestions: this.generateNetworkingSuggestions(companyName)
+        suggestions: suggestions
       };
     }
   }
@@ -138,10 +141,39 @@ class LinkedInService {
   /**
    * Generate networking suggestions when API access is limited
    */
-  generateNetworkingSuggestions(companyName) {
-    return {
-      message: 'Connect with employees at ' + companyName,
-      tips: [
+  async generateNetworkingSuggestions(companyName) {
+    try {
+      // Try to get user's connections at the company
+      const connections = await this.getConnectionsAtCompany(companyName);
+      const education = await this.getMyEducation();
+      
+      const tips = [];
+      
+      // Add personalized tip if user has connections
+      if (connections && connections.length > 0) {
+        tips.push({
+          icon: '👥',
+          title: 'Your Network at ' + companyName,
+          description: `You have ${connections.length} connection${connections.length > 1 ? 's' : ''} at ${companyName}! Reach out to them for referrals and insights.`,
+          action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName)}&network=%5B%22F%22%5D`,
+          personalized: true
+        });
+      }
+      
+      // Add alumni tip with user's schools
+      if (education && education.length > 0) {
+        const schoolNames = education.map(e => e.schoolName).join(', ');
+        tips.push({
+          icon: '🎓',
+          title: 'Alumni Network',
+          description: `Find alumni from ${schoolNames} working at ${companyName}`,
+          action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName)}&network=%5B%22S%22%5D`,
+          personalized: true
+        });
+      }
+      
+      // Add standard tips
+      tips.push(
         {
           icon: '🔍',
           title: 'LinkedIn Search',
@@ -155,25 +187,113 @@ class LinkedInService {
           action: `https://www.linkedin.com/company/${encodeURIComponent(companyName.toLowerCase().replace(/\s+/g, '-'))}/people/`
         },
         {
-          icon: '💼',
-          title: 'Alumni Network',
-          description: 'Look for alumni from your school working at the company',
-          action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName)}&network=%5B%22S%22%5D`
-        },
-        {
-          icon: '👥',
-          title: '2nd Degree Connections',
-          description: 'Find people at the company who are connected to your connections',
-          action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName)}&network=%5B%22F%22%2C%22S%22%5D`
-        },
-        {
           icon: '📧',
           title: 'Recruiter Outreach',
           description: 'Search for recruiters and talent acquisition specialists at the company',
           action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName + ' recruiter')}`
         }
-      ]
-    };
+      );
+      
+      return {
+        message: connections && connections.length > 0 
+          ? `Great news! You have ${connections.length} connection${connections.length > 1 ? 's' : ''} at ${companyName}` 
+          : 'Connect with employees at ' + companyName,
+        tips: tips
+      };
+    } catch (error) {
+      logger.error('Error generating networking suggestions:', error);
+      // Return basic suggestions if personalization fails
+      return {
+        message: 'Connect with employees at ' + companyName,
+        tips: [
+          {
+            icon: '🔍',
+            title: 'LinkedIn Search',
+            description: `Search "${companyName}" on LinkedIn and filter by "People" to find current employees`,
+            action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName)}&origin=GLOBAL_SEARCH_HEADER`
+          },
+          {
+            icon: '🏢',
+            title: 'Company Page',
+            description: `Visit ${companyName}'s LinkedIn page and browse their employees section`,
+            action: `https://www.linkedin.com/company/${encodeURIComponent(companyName.toLowerCase().replace(/\s+/g, '-'))}/people/`
+          },
+          {
+            icon: '💼',
+            title: 'Alumni Network',
+            description: 'Look for alumni from your school working at the company',
+            action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName)}&network=%5B%22S%22%5D`
+          },
+          {
+            icon: '📧',
+            title: 'Recruiter Outreach',
+            description: 'Search for recruiters and talent acquisition specialists at the company',
+            action: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(companyName + ' recruiter')}`
+          }
+        ]
+      };
+    }
+  }
+
+  /**
+   * Get user's connections at a specific company
+   */
+  async getConnectionsAtCompany(companyName) {
+    try {
+      const response = await fetch(`${this.baseUrl}/connections?q=viewer&projection=(elements*(to~))`, {
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        logger.warn('Could not fetch connections');
+        return [];
+      }
+
+      const data = await response.json();
+      // Filter connections by company name
+      const connections = data.elements || [];
+      const companyConnections = connections.filter(conn => {
+        const person = conn['to~'];
+        return person && person.positions && person.positions.values &&
+          person.positions.values.some(pos => 
+            pos.company && pos.company.name && 
+            pos.company.name.toLowerCase().includes(companyName.toLowerCase())
+          );
+      });
+
+      return companyConnections;
+    } catch (error) {
+      logger.warn('Error fetching connections:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get user's education history
+   */
+  async getMyEducation() {
+    try {
+      const response = await fetch(`${this.baseUrl}/me?projection=(id,firstName,lastName,educations*)`, {
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        logger.warn('Could not fetch education');
+        return [];
+      }
+
+      const data = await response.json();
+      return data.educations?.elements || [];
+    } catch (error) {
+      logger.warn('Error fetching education:', error);
+      return [];
+    }
   }
 
   /**
