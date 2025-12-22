@@ -19,11 +19,24 @@ class LinkedInService {
    */
   async searchCompanyEmployees(companyName, limit = 10) {
     try {
+      // Check if we have a valid access token
+      if (!this.accessToken || this.accessToken === 'undefined') {
+        logger.info(`LinkedIn not configured - returning suggestions for ${companyName}`);
+        const suggestions = await this.generateNetworkingSuggestions(companyName);
+        return {
+          success: false,
+          linkedinNotConfigured: true,
+          message: 'LinkedIn integration not configured',
+          profiles: [],
+          suggestions: suggestions
+        };
+      }
+
       // Method 1: Try to find company first
       const company = await this.searchCompany(companyName);
       
       if (!company) {
-        logger.warn(`Company not found on LinkedIn: ${companyName}`);
+        logger.info(`Company not found on LinkedIn: ${companyName}`);
         const suggestions = await this.generateNetworkingSuggestions(companyName);
         return {
           success: false,
@@ -52,7 +65,7 @@ class LinkedInService {
       };
       
     } catch (error) {
-      logger.error('LinkedIn search error:', error);
+      logger.info('LinkedIn API unavailable - returning networking suggestions');
       
       // Return helpful suggestions even if API fails
       const suggestions = await this.generateNetworkingSuggestions(companyName);

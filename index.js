@@ -1,3 +1,70 @@
+// Professional Notification System
+function showNotification(message, type = 'success') {
+    const notification = document.createElement('div');
+    notification.className = `toast-notification toast-${type}`;
+    
+    const icons = {
+        success: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>',
+        error: '✕',
+        info: 'ℹ',
+        warning: '⚠'
+    };
+    
+    notification.innerHTML = `
+        <div class="toast-icon">${icons[type] || icons.info}</div>
+        <div class="toast-message">${message}</div>
+    `;
+    
+    document.body.appendChild(notification);
+    setTimeout(() => notification.classList.add('show'), 10);
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 4000);
+}
+
+function showConfirmDialog(title, message, onConfirm, onCancel) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <h2>${title}</h2>
+                <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">
+                    <img src="https://api.iconify.design/mdi:close.svg?color=%23a0a0a0" width="24" height="24" alt="Close">
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 24px;">${message}</p>
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button class="btn" id="cancelBtn" style="background: #6c757d;">Cancel</button>
+                    <button class="btn btn-primary" id="confirmBtn">Confirm</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    modal.querySelector('#confirmBtn').onclick = () => {
+        modal.remove();
+        if (onConfirm) onConfirm();
+    };
+    
+    modal.querySelector('#cancelBtn').onclick = () => {
+        modal.remove();
+        if (onCancel) onCancel();
+    };
+    
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+            if (onCancel) onCancel();
+        }
+    };
+}
+
 // Modal Functions
 function openModal(modalId) {
     const modal = document.getElementById(modalId + 'Modal');
@@ -32,10 +99,12 @@ document.addEventListener('click', (e) => {
 async function linkLinkedIn() {
     // Check if already linked
     if (currentUser && currentUser.linkedinProfile && currentUser.linkedinProfile.linkedAt) {
-        const unlink = confirm('Your LinkedIn is already linked!\n\nDo you want to unlink it?');
-        if (unlink) {
-            await unlinkLinkedIn();
-        }
+        showConfirmDialog(
+            'LinkedIn Connected',
+            'Your LinkedIn account is already linked. Would you like to unlink it?',
+            () => unlinkLinkedIn(),
+            null
+        );
         return;
     }
     
@@ -53,14 +122,14 @@ async function unlinkLinkedIn() {
         const data = await response.json();
         
         if (data.success) {
-            alert('✅ LinkedIn unlinked successfully!');
+            showNotification('LinkedIn unlinked successfully!', 'success');
             await checkAuthStatus(); // Refresh user data
         } else {
-            alert('Failed to unlink LinkedIn. Please try again.');
+            showNotification('Failed to unlink LinkedIn. Please try again.', 'error');
         }
     } catch (error) {
         console.error('Unlink error:', error);
-        alert('Error unlinking LinkedIn. Please try again.');
+        showNotification('Error unlinking LinkedIn. Please try again.', 'error');
     }
 }
 
@@ -164,7 +233,7 @@ function updateLinkedInButton(user) {
     if (user && user.linkedinProfile && user.linkedinProfile.linkedAt) {
         // LinkedIn is linked - show as linked with checkmark
         linkedinBtn.style.background = 'linear-gradient(135deg, #059669 0%, #10b981 100%)';
-        linkedinBtnText.innerHTML = '✓ LinkedIn Linked';
+        linkedinBtnText.innerHTML = 'LinkedIn Linked';
         linkedinBtn.title = 'LinkedIn connected - Click to unlink';
     } else if (user) {
         // User logged in but LinkedIn not linked
@@ -250,7 +319,7 @@ async function handleSignUp(event) {
             updateUIForLoggedInUser(data.user);
             
             // Show success message
-            alert(`Welcome, ${data.user.name}! Your account has been created.`);
+            showNotification(`Welcome, ${data.user.name}! Your account has been created.`, 'success');
             
             // Reset form
             form.reset();
@@ -315,7 +384,7 @@ async function handleSignIn(event) {
             updateUIForLoggedInUser(data.user);
             
             // Show success message
-            alert(`Welcome back, ${data.user.name}!`);
+            showNotification(`Welcome back, ${data.user.name}!`, 'success');
             
             // Reset form
             form.reset();
@@ -347,20 +416,20 @@ async function handleLogout() {
         
         if (response.ok && data.success) {
             updateUIForLoggedOutUser();
-            alert('You have been logged out successfully.');
+            showNotification('You have been logged out successfully.', 'success');
         } else {
-            alert('Logout failed. Please try again.');
+            showNotification('Logout failed. Please try again.', 'error');
         }
     } catch (error) {
         console.error('Logout error:', error);
-        alert('Logout failed. Please try again.');
+        showNotification('Logout failed. Please try again.', 'error');
     }
 }
 
 // Check auth status on page load
-document.addEventListener('DOMContentLoaded', () => {
-    checkAuthStatus();
-    checkSubscriptionStatus();
+document.addEventListener('DOMContentLoaded', async () => {
+    await checkAuthStatus();
+    await checkSubscriptionStatus();
     
     // Check URL parameters for OAuth redirects
     const urlParams = new URLSearchParams(window.location.search);
@@ -368,29 +437,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Google OAuth success
     if (urlParams.get('login') === 'success') {
         window.history.replaceState({}, document.title, window.location.pathname);
-        checkAuthStatus().then(() => {
-            if (currentUser) {
-                alert(`Welcome, ${currentUser.name}! You've successfully signed in with Google.`);
-            }
-        });
+        await checkAuthStatus();
+        if (currentUser) {
+            showNotification(`Welcome, ${currentUser.name}! You've successfully signed in with Google.`, 'success');
+        }
     }
     
     // LinkedIn OAuth success
     if (urlParams.get('linkedin') === 'success') {
         window.history.replaceState({}, document.title, window.location.pathname);
-        checkAuthStatus().then(() => {
-            if (currentUser) {
-                alert(`✅ Welcome, ${currentUser.name}!\n\nYou've successfully signed in with LinkedIn. Your profile is now linked!`);
-            }
-        });
+        await checkAuthStatus();
+        if (currentUser) {
+            showNotification(`Welcome, ${currentUser.name}! You've successfully signed in with LinkedIn.`, 'success');
+        }
     }
     
     // LinkedIn linked to existing account
     if (urlParams.get('linkedin') === 'linked') {
         window.history.replaceState({}, document.title, window.location.pathname);
-        checkAuthStatus().then(() => {
-            alert('✅ LinkedIn linked successfully!\n\nYour LinkedIn profile has been connected to your account.');
-        });
+        await checkAuthStatus();
+        showNotification('LinkedIn linked successfully! Your profile has been connected.', 'success');
     }
     
     // LinkedIn OAuth errors
@@ -414,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 errorMessage = 'Failed to log you in. Please try again.';
                 break;
             case 'linkedin_not_configured':
-                errorMessage = '⚠️ LinkedIn Integration Not Set Up\n\n' +
+                errorMessage = 'LinkedIn Integration Not Set Up\n\n' +
                              'Please follow these steps:\n\n' +
                              '1. Go to https://www.linkedin.com/developers/apps\n' +
                              '2. Create an app and get Client ID & Secret\n' +
@@ -426,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if (errorMessage) {
-            alert(errorMessage);
+            showNotification(errorMessage, 'error');
         }
     }
 });
@@ -493,7 +559,7 @@ if (uploadBoxModal && modalFileInput) {
 function handleFiles(files) {
     if (files.length > 0) {
         const fileNames = Array.from(files).map(f => f.name).join(', ');
-        alert(`✅ Files selected:\n${fileNames}\n\nFiles will be uploaded to your profile!`);
+        showNotification(`${files.length} file(s) selected`, 'success');
     }
 }
 
@@ -618,7 +684,7 @@ function showNoResults(query) {
     const dropdown = createSuggestionsDropdown();
     dropdown.innerHTML = `
         <div style="padding: 20px; text-align: center; color: var(--text-secondary);">
-            <div style="font-size: 40px; margin-bottom: 10px;">🔍</div>
+            <div style="font-size: 40px; margin-bottom: 10px;"><svg width="40" height="40" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
             <div>No companies found for "${query}"</div>
             <div style="font-size: 12px; margin-top: 5px;">Try searching for companies like Google, Amazon, or Microsoft</div>
         </div>
@@ -665,11 +731,11 @@ async function showCompanyDetails(slug) {
             
             displayCompanyModal(data.data);
         } else {
-            alert(data.error || 'Company details not found.');
+            showNotification(data.error || 'Company details not found.', 'error');
         }
     } catch (error) {
         console.error('Error fetching company details:', error);
-        alert('Failed to load company details. Please try again.');
+        showNotification('Failed to load company details. Please try again.', 'error');
     }
 }
 
@@ -688,15 +754,18 @@ function handleUpgrade() {
     // Check if user is logged in
     if (!currentUser) {
         closeModal('subscription');
-        alert('Please sign in to upgrade to Premium.');
+        showNotification('Please sign in to upgrade to Premium.', 'info');
         setTimeout(() => openModal('signin'), 300);
         return;
     }
     
     // In production, integrate with payment gateway (Razorpay, Stripe, etc.)
-    if (confirm('Upgrade to Premium for ₹149/month?\n\n✓ Unlimited company views\n✓ Full access to all features\n✓ Priority support\n\nNote: This is a demo. In production, you will be redirected to payment gateway.')) {
-        upgradeToPremium();
-    }
+    showConfirmDialog(
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 8px; vertical-align: middle;"><path d="M12 2L2 22h20L12 2z" fill="url(#starGradient)"/><defs><linearGradient id="starGradient"><stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#FFA500"/></linearGradient></defs></svg>Upgrade to Premium',
+        '<div style="text-align: left;"><strong style="color: var(--primary-color); font-size: 1.3rem;">₹149/month</strong><br><br><span style="color: #00ff88;">✓</span> Unlimited company views<br><span style="color: #00ff88;">✓</span> Full access to all features<br><span style="color: #00ff88;">✓</span> Priority support<br><br><small style="color: #888;">Note: This is a demo. In production, you will be redirected to payment gateway.</small></div>',
+        () => upgradeToPremium(),
+        null
+    );
 }
 
 // Upgrade to premium
@@ -728,14 +797,14 @@ async function upgradeToPremium() {
             
             // Show success message
             setTimeout(() => {
-                alert('🎉 Welcome to Premium!\n\nYou now have unlimited access to all companies and features.\n\nThank you for supporting CareerCraft!');
+                showNotification('Welcome to Premium! You now have unlimited access.', 'success');
             }, 300);
         } else {
-            alert(data.error || 'Upgrade failed. Please try again.');
+            showNotification(data.error || 'Upgrade failed. Please try again.', 'error');
         }
     } catch (error) {
         console.error('Upgrade error:', error);
-        alert('Upgrade failed. Please try again later.');
+        showNotification('Upgrade failed. Please try again later.', 'error');
     }
 }
 
@@ -763,11 +832,11 @@ function displayCompanyModal(company) {
         
         ${company.features && company.features.length > 0 ? `
             <div class="company-section">
-                <h3>✨ Company Features & Benefits</h3>
+                <h3>Company Features & Benefits</h3>
                 <div class="features-grid">
                     ${company.features.map(feature => `
                         <div class="feature-item">
-                            <span class="feature-icon">✓</span>
+                            <span class="feature-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#00ff88"/></svg></span>
                             <span>${feature}</span>
                         </div>
                     `).join('')}
@@ -777,7 +846,7 @@ function displayCompanyModal(company) {
         
         ${company.jobs && company.jobs.length > 0 ? `
             <div class="company-section">
-                <h3>💼 Open Positions (${company.jobs.length})</h3>
+                <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 6px; vertical-align: middle;"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 2v4M16 2v4M4 10h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Open Positions (${company.jobs.length})</h3>
                 <div class="jobs-list">
                     ${company.jobs.map((job, index) => `
                         <div class="job-card" data-job-index="${index}">
@@ -810,7 +879,7 @@ function displayCompanyModal(company) {
             </div>
         ` : `
             <div class="company-section">
-                <h3>💼 Open Positions</h3>
+                <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 6px; vertical-align: middle;"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 2v4M16 2v4M4 10h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Open Positions</h3>
                 <p class="no-jobs">No positions currently available. Check back soon!</p>
             </div>
         `}
@@ -954,7 +1023,7 @@ const contactForm = document.querySelector('.contact-form');
 if (contactForm) {
     contactForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        alert('✅ Thank you for your message! We will get back to you soon.');
+        showNotification('Thank you for your message! We will get back to you soon.', 'success');
         contactForm.reset();
     });
 }
@@ -966,7 +1035,7 @@ if (contactForm) {
 document.querySelectorAll('.upload-form').forEach(form => {
     form.addEventListener('submit', (e) => {
         e.preventDefault();
-        alert('✅ Resume uploaded successfully!\n\nYour profile has been updated with your resume and job preferences.');
+        showNotification('Resume uploaded successfully! Your profile has been updated.', 'success');
         closeModal('upload');
         form.reset();
     });
@@ -1076,26 +1145,58 @@ const createTrail = (e) => {
 // Uncomment to enable cursor trail
 // document.addEventListener('mousemove', createTrail);
 
-console.log('🚀 CareerCraft initialized successfully!');
+console.log('CareerCraft initialized successfully!');
+
+// Smooth Scroll Animation for All Sections
+function initSectionAnimations() {
+    const sections = document.querySelectorAll('section');
+    
+    const observerOptions = {
+        threshold: 0.15,
+        rootMargin: '0px 0px -100px 0px'
+    };
+    
+    const sectionObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('section-visible');
+            }
+        });
+    }, observerOptions);
+    
+    sections.forEach(section => {
+        sectionObserver.observe(section);
+    });
+    
+    // Make hero section immediately visible
+    const heroSection = document.querySelector('.hero');
+    if (heroSection) {
+        heroSection.classList.add('section-visible');
+    }
+}
+
+// Smooth scroll to any section
+function smoothScrollToSection(sectionId) {
+    const section = document.querySelector(sectionId);
+    if (section) {
+        const navHeight = 80; // navbar height
+        const targetPosition = section.offsetTop - navHeight;
+        
+        window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+        });
+    }
+}
 
 // Show Templates Section when clicked
 function showTemplates(event) {
     event.preventDefault();
     const templatesSection = document.querySelector('.templates-section');
-    
-    // Toggle templates section visibility
-    if (templatesSection.classList.contains('active')) {
-        templatesSection.classList.remove('active');
-    } else {
+    if (templatesSection) {
         templatesSection.classList.add('active');
-        // Smooth scroll to templates
-        setTimeout(() => {
-            templatesSection.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start'
-            });
-        }, 100);
     }
+    smoothScrollToSection('#templates');
 }
 
 // Resume Templates Filtering
@@ -1127,64 +1228,32 @@ function filterTemplates(role) {
 
 // Download Template Function
 function downloadTemplate(templateName) {
-    // Template details mapping
+    // Template URL mapping to actual HTML files
     const templates = {
-        'data-pro': {
-            name: 'Data Pro Template',
-            role: 'Data Analyst',
-            features: ['Technical skills section', 'Project metrics showcase', 'Tool proficiency charts']
-        },
-        'analytics-expert': {
-            name: 'Analytics Expert Template',
-            role: 'Data Analyst',
-            features: ['Dashboard portfolio', 'Visualization highlights', 'Statistical analysis focus']
-        },
-        'dev-portfolio': {
-            name: 'Dev Portfolio Template',
-            role: 'Software Developer',
-            features: ['GitHub integration', 'Project showcase', 'Tech stack display']
-        },
-        'marketing-maven': {
-            name: 'Marketing Maven Template',
-            role: 'Marketing Specialist',
-            features: ['Campaign results', 'ROI metrics', 'Creative strategy showcase']
-        },
-        'design-studio': {
-            name: 'Design Studio Template',
-            role: 'Designer',
-            features: ['Portfolio gallery', 'Design tool proficiency', 'Creative projects']
-        },
-        'bi-specialist': {
-            name: 'BI Specialist Template',
-            role: 'Business Intelligence',
-            features: ['KPI dashboards', 'ETL process showcase', 'Business insights']
-        }
+        'data-pro': '/templates/data-analyst-template.html',
+        'analytics-expert': '/templates/data-analyst-template.html',
+        'dev-portfolio': '/templates/software-developer-template.html',
+        'marketing-maven': '/templates/marketing-template.html',
+        'design-studio': '/templates/designer-template.html',
+        'bi-specialist': '/templates/data-analyst-template.html'
     };
     
-    const template = templates[templateName];
+    const templateUrl = templates[templateName];
     
-    if (template) {
-        const message = `✅ ${template.name} Selected!\n\n` +
-                       `Perfect for: ${template.role}\n\n` +
-                       `Features:\n${template.features.map(f => `• ${f}`).join('\n')}\n\n` +
-                       `Your template is being prepared for download...\n\n` +
-                       `📄 Format: DOCX & PDF\n` +
-                       `🎨 Fully customizable\n` +
-                       `✨ ATS-friendly design`;
-        
-        alert(message);
-        
-        // Simulate download process
-        setTimeout(() => {
-            console.log(`Downloaded: ${template.name}`);
-            // In a real app, this would trigger actual file download
-            // window.location.href = `/download/${templateName}`;
-        }, 500);
+    if (templateUrl) {
+        // Open template in new tab so users can view and save/print it
+        window.open(templateUrl, '_blank');
+        showNotification('Template opened! You can now save it as PDF or print it.', 'success');
+    } else {
+        showNotification('Template not found. Please try again.', 'error');
     }
 }
 
 // Initialize template cards animation on load
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize section scroll animations
+    initSectionAnimations();
+    
     const templateCards = document.querySelectorAll('.template-card');
     templateCards.forEach((card, index) => {
         card.style.opacity = '0';
@@ -1195,6 +1264,17 @@ document.addEventListener('DOMContentLoaded', () => {
             card.style.opacity = '1';
             card.style.transform = 'translateY(0)';
         }, index * 100);
+    });
+    
+    // Add smooth scroll to all nav links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            if (href !== '#' && href !== '#home') {
+                e.preventDefault();
+                smoothScrollToSection(href);
+            }
+        });
     });
     
     // Initialize resume upload functionality
@@ -1215,7 +1295,7 @@ function initializeContactForm() {
             return;
         }
         
-        console.log('✅ Contact form found and initialized');
+        // Contact form initialized
         
         // Add input listeners to track typing
         const nameInput = form.querySelector('[name="contactName"]');
@@ -1224,19 +1304,19 @@ function initializeContactForm() {
         
         if (nameInput) {
             nameInput.addEventListener('input', (e) => {
-                console.log('✏️ Name typed:', e.target.value);
+                // Name input event
             });
         }
         
         if (emailInput) {
             emailInput.addEventListener('input', (e) => {
-                console.log('✏️ Email typed:', e.target.value);
+                // Email input event
             });
         }
         
         if (messageInput) {
             messageInput.addEventListener('input', (e) => {
-                console.log('✏️ Message typed:', e.target.value);
+                // Message input event
             });
         }
         
@@ -1252,7 +1332,7 @@ function initializeContactForm() {
                 const emailValue = emailInput ? emailInput.value.trim() : '';
                 const messageValue = messageInput ? messageInput.value.trim() : '';
                 
-                console.log('🎯 Values at button click:', { nameValue, emailValue, messageValue });
+                // Validate form values before submission
                 
                 await handleContactSubmit(e, nameValue, emailValue, messageValue, form);
             });
@@ -1261,27 +1341,27 @@ function initializeContactForm() {
 }
 
 async function handleContactSubmit(event, name, email, message, form) {
-    console.log('📝 Processing submission with values:', { name, email, message });
+    console.log('Processing submission with values:', { name, email, message });
     
     const submitBtn = form.querySelector('button[type="submit"]');
     const successDiv = document.getElementById('contactSuccess');
     
     // Validate
     if (name.length < 2) {
-        alert('❌ Please enter your name (at least 2 characters)');
-        event.target.querySelector('[name="contactName"]').focus();
+        showNotification('Please enter your name (at least 2 characters)', 'warning');
+        form.querySelector('[name="contactName"]').focus();
         return;
     }
     
     if (!email.includes('@')) {
-        alert('❌ Please enter a valid email address');
-        event.target.querySelector('[name="contactEmail"]').focus();
+        showNotification('Please enter a valid email address', 'warning');
+        form.querySelector('[name="contactEmail"]').focus();
         return;
     }
     
     if (message.length < 10) {
-        alert('❌ Please enter a message (at least 10 characters)');
-        event.target.querySelector('[name="contactMessage"]').focus();
+        showNotification('Please enter a message (at least 10 characters)', 'warning');
+        form.querySelector('[name="contactMessage"]').focus();
         return;
     }
     
@@ -1296,29 +1376,27 @@ async function handleContactSubmit(event, name, email, message, form) {
             body: JSON.stringify({ name, email, message })
         });
         
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
+        
         const data = await response.json();
-        console.log('📨 Server response:', data);
+        console.log('Server response:', data);
         
         if (data.success) {
-            // Show success message
-            successDiv.style.display = 'block';
-            successDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Show success notification
+            showNotification('Thank you! Your message has been sent successfully.', 'success');
             
             // Clear form
-            event.target.reset();
+            form.reset();
             
-            // Hide success after 5 seconds
-            setTimeout(() => {
-                successDiv.style.display = 'none';
-            }, 5000);
-            
-            console.log('✅ Message sent successfully!');
+            console.log('Message sent successfully!');
         } else {
-            alert('❌ ' + (data.error || 'Failed to send message'));
+            showNotification(data.error || 'Failed to send message', 'error');
         }
     } catch (error) {
-        console.error('❌ Error sending message:', error);
-        alert('❌ Network error. Please check your connection and try again.');
+        console.error('Error sending message:', error);
+        showNotification('Network error. Please check your connection and try again.', 'error');
     } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Send Message';
@@ -1405,20 +1483,24 @@ function initializeResumeUpload() {
 }
 
 function handleFileSelect(file, fileInput, analyzeBtn, fileNameDisplay) {
-    // Validate file type
-    if (!file.name.endsWith('.pdf')) {
-        alert('Please upload a PDF file for best results.');
+    // Validate file type - accept PDF and image formats
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
+    const fileName = file.name.toLowerCase();
+    const isValidFile = allowedExtensions.some(ext => fileName.endsWith(ext));
+    
+    if (!isValidFile) {
+        showNotification('Please upload a PDF or image file (JPG, PNG, etc.)', 'error');
         return;
     }
     
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
+        showNotification('File size must be less than 5MB', 'error');
         return;
     }
     
     uploadedResume = file;
-    fileNameDisplay.textContent = `✓ ${file.name}`;
+    fileNameDisplay.textContent = `${file.name}`;
     fileNameDisplay.style.color = 'var(--primary-color)';
     analyzeBtn.disabled = false;
 }
@@ -1459,7 +1541,7 @@ async function searchCompaniesForAnalysis(query) {
 
 async function analyzeResume() {
     if (!uploadedResume) {
-        alert('Please select a resume file first.');
+        showNotification('Please select a resume file first.', 'warning');
         return;
     }
     
@@ -1470,7 +1552,7 @@ async function analyzeResume() {
         analysisResults.innerHTML = `
             <div class="analysis-loading">
                 <div class="loader"></div>
-                <p>🤖 AI is analyzing your resume...</p>
+                <p><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 8px; vertical-align: middle;"><rect x="4" y="8" width="16" height="12" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="13" r="1" fill="currentColor"/><circle cx="15" cy="13" r="1" fill="currentColor"/><path d="M9 17h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 4v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>AI is analyzing your resume...</p>
                 <p class="loading-subtext">This may take up to 30 seconds</p>
                 <p id="progressStatus" style="margin-top: 10px; color: #888; font-size: 14px;">Starting...</p>
             </div>
@@ -1577,7 +1659,7 @@ async function analyzeResume() {
             errorMessage += error.message;
         }
         
-        alert(errorMessage);
+        showNotification(errorMessage, 'error');
     }
 }
 
@@ -1586,7 +1668,7 @@ function displayAnalysisResults(data) {
     
     const html = `
         <div class="analysis-header">
-            <h2>📊 Resume Analysis Results</h2>
+            <h2>Resume Analysis Results</h2>
             ${company ? `<div class="company-badge">Tailored for ${company.name}</div>` : ''}
         </div>
         
@@ -1630,10 +1712,10 @@ function displayAnalysisResults(data) {
         
         ${analysis.strengths && analysis.strengths.length > 0 ? `
         <div class="analysis-section">
-            <h3><span class="section-icon">💪</span> Your Strengths</h3>
+            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M6 9h12M6 15h12M10 3L8 21M16 3l-2 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span> Your Strengths</h3>
             <div class="strengths-list">
                 ${analysis.strengths.map(strength => `
-                    <div class="strength-item">✓ ${strength}</div>
+                    <div class="strength-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align: middle; margin-right: 6px;"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#00ff88"/></svg>${strength}</div>
                 `).join('')}
             </div>
         </div>
@@ -1641,7 +1723,7 @@ function displayAnalysisResults(data) {
         
         ${analysis.improvements && analysis.improvements.length > 0 ? `
         <div class="analysis-section">
-            <h3><span class="section-icon">🎯</span> Improvements Needed</h3>
+            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="6" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="2" fill="#00d9ff"/></svg></span> Improvements Needed</h3>
             ${analysis.improvements.map(item => `
                 <div class="improvement-item ${item.priority}-priority">
                     <div class="improvement-header">
@@ -1649,7 +1731,7 @@ function displayAnalysisResults(data) {
                         <div class="priority-badge ${item.priority}">${item.priority} Priority</div>
                     </div>
                     <div class="improvement-issue"><strong>Issue:</strong> ${item.issue}</div>
-                    <div class="improvement-suggestion">💡 ${item.suggestion}</div>
+                    <div class="improvement-suggestion"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 6px; vertical-align: middle;"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 16v-4M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>${item.suggestion}</div>
                 </div>
             `).join('')}
         </div>
@@ -1657,7 +1739,7 @@ function displayAnalysisResults(data) {
         
         ${analysis.companySpecific && analysis.companySpecific.length > 0 ? `
         <div class="analysis-section">
-            <h3><span class="section-icon">🎯</span> ${company ? company.name + ' Specific' : 'Company-Specific'} Suggestions</h3>
+            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="6" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="2" fill="#00d9ff"/></svg></span> ${company ? company.name + ' Specific' : 'Company-Specific'} Suggestions</h3>
             ${analysis.companySpecific.map(item => `
                 <div class="company-specific-item">
                     <div class="company-specific-point">→ ${item.point}</div>
@@ -1669,7 +1751,7 @@ function displayAnalysisResults(data) {
         
         ${analysis.keywordSuggestions && analysis.keywordSuggestions.length > 0 ? `
         <div class="analysis-section">
-            <h3><span class="section-icon">🔑</span> Keywords to Add</h3>
+            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><circle cx="8" cy="15" r="4" stroke="currentColor" stroke-width="2"/><path d="M12 15h10M18 12v6M21 13v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span> Keywords to Add</h3>
             <div class="keywords-container">
                 ${analysis.keywordSuggestions.map(keyword => `
                     <div class="keyword-tag">${keyword}</div>
@@ -1680,10 +1762,10 @@ function displayAnalysisResults(data) {
         
         ${analysis.formattingTips && analysis.formattingTips.length > 0 ? `
         <div class="analysis-section">
-            <h3><span class="section-icon">✨</span> Formatting Tips</h3>
+            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10L12 2Z" fill="#00d9ff"/></svg></span> Formatting Tips</h3>
             <ul style="list-style: none; padding: 0;">
                 ${analysis.formattingTips.map(tip => `
-                    <li style="padding: 8px 0; color: var(--text-secondary);">📝 ${tip}</li>
+                    <li style="padding: 8px 0; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 6px; vertical-align: middle;"><path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/></svg>${tip}</li>
                 `).join('')}
             </ul>
         </div>
@@ -1691,7 +1773,7 @@ function displayAnalysisResults(data) {
         
         ${analysis.summaryRecommendation ? `
         <div class="analysis-section">
-            <h3><span class="section-icon">📝</span> Summary</h3>
+            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Summary</h3>
             <div class="summary-box">
                 ${analysis.summaryRecommendation}
             </div>
@@ -1703,7 +1785,8 @@ function displayAnalysisResults(data) {
         
         <div style="text-align: center; margin-top: 3rem; margin-bottom: 2rem; padding: 2rem 0; border-top: 1px solid rgba(255, 255, 255, 0.1);">
             <button class="btn btn-primary" onclick="closeModal('analysis'); openModal('upload')" style="min-width: 250px; font-size: 1.1rem;">
-                📄 Analyze Another Resume
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin-right: 8px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Analyze Another Resume
             </button>
         </div>
     `;
@@ -1718,7 +1801,7 @@ async function fetchCompanyEmployees(companyName) {
     // Show loading state
     employeesSection.innerHTML = `
         <div class="analysis-section">
-            <h3><span class="section-icon">👥</span> Connect with ${companyName} Employees on LinkedIn</h3>
+            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Connect with ${companyName} Employees on LinkedIn</h3>
             <div style="text-align: center; padding: 2rem;">
                 <div class="loading-spinner"></div>
                 <p>Searching for employees...</p>
@@ -1737,13 +1820,14 @@ async function fetchCompanyEmployees(companyName) {
             // User hasn't connected LinkedIn
             employeesSection.innerHTML = `
                 <div class="analysis-section linkedin-connect-section">
-                    <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                    <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Network with ${companyName} Employees</h3>
                     <div class="linkedin-prompt">
-                        <div class="linkedin-icon">💼</div>
+                        <div class="linkedin-icon"><svg width="64" height="64" viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="#0077b5" stroke-width="2"/><path d="M8 11v6M8 8.5v.01M12 13v4M16 11v6M12 11a3 3 0 013-3" stroke="#0077b5" stroke-width="2" stroke-linecap="round"/></svg></div>
                         <p><strong>Connect your LinkedIn to see employee profiles!</strong></p>
                         <p>Get direct access to people working at ${companyName} to expand your network.</p>
                         <button class="btn btn-linkedin" onclick="linkLinkedIn()">
-                            🔗 Connect LinkedIn Account
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin-right: 8px;"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            Connect LinkedIn Account
                         </button>
                     </div>
                     ${displayNetworkingSuggestions(data.suggestions)}
@@ -1756,13 +1840,19 @@ async function fetchCompanyEmployees(companyName) {
             // LinkedIn token expired
             employeesSection.innerHTML = `
                 <div class="analysis-section linkedin-connect-section">
-                    <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                    <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Network with ${companyName} Employees</h3>
                     <div class="linkedin-prompt">
-                        <div class="linkedin-icon">⚠️</div>
+                        <div class="linkedin-icon">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none">
+                                <path d="M12 2L2 22h20L12 2z" stroke="#ff9800" stroke-width="2" fill="none"/>
+                                <path d="M12 9v4M12 17h.01" stroke="#ff9800" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </div>
                         <p><strong>Your LinkedIn connection has expired</strong></p>
                         <p>Reconnect to see employee profiles and expand your network.</p>
                         <button class="btn btn-linkedin" onclick="linkLinkedIn()">
-                            🔗 Reconnect LinkedIn
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin-right: 8px;"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            Reconnect LinkedIn
                         </button>
                     </div>
                     ${displayNetworkingSuggestions(data.suggestions)}
@@ -1775,7 +1865,7 @@ async function fetchCompanyEmployees(companyName) {
             // Display employee profiles
             employeesSection.innerHTML = `
                 <div class="analysis-section">
-                    <h3><span class="section-icon">👥</span> ${companyName} Employees on LinkedIn</h3>
+                    <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> ${companyName} Employees on LinkedIn</h3>
                     <div class="employees-grid">
                         ${data.profiles.map(profile => `
                             <div class="employee-card">
@@ -1806,7 +1896,7 @@ async function fetchCompanyEmployees(companyName) {
             // No profiles found or API limitation
             employeesSection.innerHTML = `
                 <div class="analysis-section">
-                    <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                    <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Network with ${companyName} Employees</h3>
                     <div class="info-message">
                         <p>We couldn't fetch employee profiles automatically, but here are some great ways to connect:</p>
                     </div>
@@ -1819,7 +1909,7 @@ async function fetchCompanyEmployees(companyName) {
         console.error('Error fetching employees:', error);
         employeesSection.innerHTML = `
             <div class="analysis-section">
-                <h3><span class="section-icon">👥</span> Network with ${companyName} Employees</h3>
+                <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Network with ${companyName} Employees</h3>
                 <div class="error-message">
                     <p>Unable to fetch employee profiles at the moment.</p>
                 </div>

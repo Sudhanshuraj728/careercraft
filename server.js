@@ -229,7 +229,9 @@ app.get('/api/auth/user', isAuthenticated, (req, res) => {
       id: req.user._id,
       name: req.user.name,
       email: req.user.email,
-      avatar: req.user.avatar
+      avatar: req.user.avatar,
+      linkedinProfile: req.user.linkedinProfile || null,
+      linkedinId: req.user.linkedinId || null
     }
   });
 });

@@ -5,7 +5,7 @@
 node_modules/
 
 # Uploads
-uploads/*
+uploads
 !uploads/.gitkeep
 
 # Logs

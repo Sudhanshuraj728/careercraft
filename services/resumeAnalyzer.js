@@ -7,11 +7,86 @@ const axios = require('axios');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'your-gemini-api-key-here';
 
 /**
- * Extract text from PDF resume using Gemini Vision API (handles image-based PDFs)
+ * Extract text from image files using Gemini Vision API
+ */
+async function extractTextFromImage(imagePath) {
+    try {
+        console.log('Extracting text from image using Gemini Vision API:', imagePath);
+        
+        // Read image file as base64
+        const imageBuffer = fs.readFileSync(imagePath);
+        const base64Image = imageBuffer.toString('base64');
+        const mimeType = getMimeType(imagePath);
+        
+        // Call Gemini Vision API
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                contents: [{
+                    parts: [
+                        {
+                            text: "Extract all text from this resume image. Preserve the structure and formatting as much as possible. Include all text you can see."
+                        },
+                        {
+                            inline_data: {
+                                mime_type: mimeType,
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }]
+            },
+            {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 30000
+            }
+        );
+        
+        if (response.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            const extractedText = response.data.candidates[0].content.parts[0].text;
+            console.log('Successfully extracted text from image. Length:', extractedText.length);
+            return extractedText;
+        } else {
+            throw new Error('No text extracted from image');
+        }
+    } catch (error) {
+        console.error('Image text extraction error:', error.message);
+        throw new Error('Failed to extract text from image: ' + error.message);
+    }
+}
+
+/**
+ * Get MIME type based on file extension
+ */
+function getMimeType(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.bmp': 'image/bmp',
+        '.tiff': 'image/tiff',
+        '.webp': 'image/webp'
+    };
+    return mimeTypes[ext] || 'image/jpeg';
+}
+
+/**
+ * Extract text from PDF or image resume using Gemini Vision API
  */
 async function extractTextFromPDF(filePath) {
     try {
-        console.log('Extracting text from PDF:', filePath);
+        console.log('Extracting text from file:', filePath);
+        
+        // Check file extension
+        const ext = path.extname(filePath).toLowerCase();
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
+        
+        // If it's an image file, use Gemini Vision API directly
+        if (imageExtensions.includes(ext)) {
+            return await extractTextFromImage(filePath);
+        }
         
         // Check if file exists
         if (!fs.existsSync(filePath)) {
