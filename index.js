@@ -161,6 +161,12 @@ function updateSubscriptionBanner() {
     const banner = document.getElementById('subscriptionBanner');
     const remainingViews = document.getElementById('remainingViews');
     
+    // Don't show banner if user is not logged in
+    if (!currentUser) {
+        banner.style.display = 'none';
+        return;
+    }
+    
     if (!subscriptionStatus || subscriptionStatus.plan === 'premium') {
         banner.style.display = 'none';
         return;
@@ -883,7 +889,7 @@ function displayCompanyModal(company) {
                                 </ul>
                             </div>
                             <button class="btn btn-primary" onclick="applyForJob('${company.name}', '${job.title}', ${index})">
-                                Apply for this Position
+                                Check Resume Compatibility
                             </button>
                         </div>
                     `).join('')}

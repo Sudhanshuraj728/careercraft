@@ -543,6 +543,125 @@ app.get('/api/admin/companies', async (req, res) => {
   }
 });
 
+// GET /api/admin/report - Generate admin report
+app.get('/api/admin/report', asyncHandler(async (req, res) => {
+  const users = await User.find({}).select('-password').lean();
+  const companies = await Company.find({}).lean();
+  const contacts = await Contact.find({}).lean();
+  const subscriptions = await Subscription.find({}).lean();
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    summary: {
+      totalUsers: users.length,
+      totalCompanies: companies.length,
+      totalContacts: contacts.length,
+      totalSubscriptions: subscriptions.length,
+      googleAuthUsers: users.filter(u => u.googleId).length,
+      linkedinAuthUsers: users.filter(u => u.linkedinId).length,
+      emailAuthUsers: users.filter(u => !u.googleId && !u.linkedinId).length,
+    },
+    users: users.map(u => ({
+      name: u.name,
+      email: u.email,
+      authType: u.googleId ? 'Google' : u.linkedinId ? 'LinkedIn' : 'Email',
+      createdAt: u.createdAt
+    })),
+    companies: companies.map(c => ({
+      name: c.name,
+      industry: c.industry,
+      location: c.location,
+      size: c.size,
+      openPositions: c.openPositions?.length || 0
+    })),
+    recentContacts: contacts.slice(0, 50).map(c => ({
+      name: c.name,
+      email: c.email,
+      status: c.status,
+      createdAt: c.createdAt
+    }))
+  };
+
+  res.json({ success: true, report });
+}));
+
+// GET /api/admin/export - Export all data
+app.get('/api/admin/export', asyncHandler(async (req, res) => {
+  const { type } = req.query; // 'users', 'companies', 'contacts', or 'all'
+  
+  let data = {};
+  
+  if (type === 'users' || type === 'all') {
+    data.users = await User.find({}).select('-password').lean();
+  }
+  if (type === 'companies' || type === 'all') {
+    data.companies = await Company.find({}).lean();
+  }
+  if (type === 'contacts' || type === 'all') {
+    data.contacts = await Contact.find({}).lean();
+  }
+  if (type === 'subscriptions' || type === 'all') {
+    data.subscriptions = await Subscription.find({}).lean();
+  }
+
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename=careercraft-export-${Date.now()}.json`);
+  res.json({ success: true, exportedAt: new Date().toISOString(), data });
+}));
+
+// GET /api/admin/logs - Get recent system logs
+app.get('/api/admin/logs', asyncHandler(async (req, res) => {
+  const logsPath = path.join(__dirname, 'logs', 'app.log');
+  
+  if (!fs.existsSync(logsPath)) {
+    return res.json({ success: true, logs: [] });
+  }
+
+  const logContent = fs.readFileSync(logsPath, 'utf-8');
+  const logLines = logContent.split('\n').filter(line => line.trim()).slice(-100); // Last 100 lines
+  
+  const logs = logLines.map(line => {
+    try {
+      const parsed = JSON.parse(line);
+      return {
+        timestamp: parsed.timestamp,
+        level: parsed.level,
+        message: parsed.message
+      };
+    } catch {
+      return { timestamp: new Date().toISOString(), level: 'info', message: line };
+    }
+  });
+
+  res.json({ success: true, logs: logs.reverse() });
+}));
+
+// GET /api/admin/health - System health check
+app.get('/api/admin/health', asyncHandler(async (req, res) => {
+  const health = {
+    status: 'operational',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: {
+      status: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      readyState: mongoose.connection.readyState
+    },
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+      percentage: Math.round((process.memoryUsage().heapUsed / process.memoryUsage().heapTotal) * 100)
+    },
+    collections: {
+      users: await User.countDocuments(),
+      companies: await Company.countDocuments(),
+      contacts: await Contact.countDocuments(),
+      subscriptions: await Subscription.countDocuments()
+    }
+  };
+
+  res.json({ success: true, health });
+}));
+
 // --- LinkedIn Integration Endpoints ---
 // GET /api/linkedin/company-employees/:companyName - Get LinkedIn profiles of company employees
 app.get('/api/linkedin/company-employees/:companyName', asyncHandler(async (req, res) => {
