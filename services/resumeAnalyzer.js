@@ -224,29 +224,52 @@ function analyzeResumeSmartly(resumeText, companyData) {
     const hasStructure = /experience|education|skills|projects/i.test(resumeText);
     const hasBulletPoints = /•|·|→|–|-/.test(resumeText);
     
-    // Calculate base score
-    let score = 50;
+    // Calculate base score - more realistic scoring
+    let score = 30; // Start lower for more realistic range
+    
+    // Contact Information (max 10 points)
     if (hasEmail && hasPhone) score += 5;
     if (hasLinkedIn) score += 3;
-    if (hasGithub) score += 4;
-    if (hasPortfolio) score += 3;
-    if (foundSkills.length > 5) score += 8;
-    if (foundSkills.length > 10) score += 7;
-    if (foundSoftSkills.length > 2) score += 4;
-    if (hasEducation) score += 5;
-    if (hasCGPA) score += 2;
-    if (hasHonors) score += 3;
-    if (hasExperience) score += 6;
-    if (hasProjects) score += 5;
-    if (hasAchievements) score += 6;
-    if (hasMetrics) score += 7;
-    if (hasActionVerbs) score += 3;
-    if (wordCount > 300) score += 3;
-    if (wordCount > 500) score += 2;
+    if (hasGithub) score += 2;
+    if (hasPortfolio) score += 2;
     
-    // Add variation based on resume content (consistent per resume)
+    // Technical Skills (max 25 points)
+    if (foundSkills.length > 3) score += 5;
+    if (foundSkills.length > 6) score += 6;
+    if (foundSkills.length > 10) score += 8;
+    if (foundSkills.length > 15) score += 6;
+    
+    // Soft Skills (max 6 points)
+    if (foundSoftSkills.length > 1) score += 3;
+    if (foundSoftSkills.length > 3) score += 3;
+    
+    // Education (max 12 points)
+    if (hasEducation) score += 6;
+    if (hasCGPA && cgpaValue >= 7.0) score += 3;
+    if (hasCGPA && cgpaValue >= 8.5) score += 2;
+    if (hasHonors) score += 1;
+    
+    // Experience & Impact (max 25 points)
+    if (hasExperience) score += 8;
+    if (hasProjects) score += 6;
+    if (hasAchievements) score += 6;
+    if (hasMetrics) score += 5;
+    
+    // Formatting & Structure (max 8 points)
+    if (hasActionVerbs) score += 3;
+    if (hasStructure) score += 2;
+    if (hasBulletPoints) score += 2;
+    
+    // Content Length (max 6 points)
+    if (wordCount > 250) score += 2;
+    if (wordCount > 400) score += 2;
+    if (wordCount > 600) score += 2;
+    
+    // Add realistic variation based on resume content (consistent per resume)
     score += variation;
-    score = Math.min(95, Math.max(40, score));
+    
+    // Realistic score range: 35-88 (not too perfect)
+    score = Math.min(88, Math.max(35, score));
     
     // Generate company-specific strengths/improvements
     const companyTech = {
@@ -269,35 +292,44 @@ function analyzeResumeSmartly(resumeText, companyData) {
         if (hasLinkedIn) profiles.push('LinkedIn');
         if (hasGithub) profiles.push('GitHub');
         if (hasPortfolio) profiles.push('portfolio');
-        strengths.push(`Excellent! You've included email, phone, and ${profiles.join(' + ')} - making it super easy for ${companyData.name} recruiters to reach and research you.`);
+        strengths.push(`✓ Complete contact information with ${profiles.join(' & ')} profile${profiles.length > 1 ? 's' : ''}. Recruiters at ${companyData.name} can easily reach and research you.`);
     }
     
-    // Technical skills strength
+    // Technical skills strength - more realistic
     if (foundSkills.length >= 8) {
         const matchedTech = foundSkills.filter(s => relevantTech.some(t => s.includes(t.toLowerCase())));
         if (matchedTech.length > 0) {
-            strengths.push(`Perfect alignment! You've highlighted ${matchedTech.slice(0, 3).join(', ')}${matchedTech.length > 3 ? ` and ${matchedTech.length - 3} more` : ''} - these are core technologies ${companyData.name} uses daily. This shows you've done your research!`);
+            strengths.push(`✓ Strong technical alignment with ${matchedTech.slice(0, 3).join(', ')}${matchedTech.length > 3 ? ` (+${matchedTech.length - 3} more)` : ''} - directly relevant to ${companyData.name}'s tech stack.`);
         } else {
-            strengths.push(`Impressive technical breadth with ${foundSkills.length} skills listed! You're showing versatility, which ${companyData.name} values. Consider also adding their key tech: ${relevantTech.slice(0, 2).join(' and ')}.`);
+            strengths.push(`✓ Demonstrated ${foundSkills.length}+ technical skills showing versatility. Consider highlighting exposure to ${relevantTech.slice(0, 2).join(' or ')} if applicable.`);
         }
+    } else if (foundSkills.length >= 4) {
+        strengths.push(`✓ Core technical skills are present. Adding more specific technologies (especially ${relevantTech[0]} or ${relevantTech[1]}) would strengthen your profile.`);
     }
     
-    // Metrics and impact strength
+    // Metrics and impact strength - more nuanced
     if (hasMetrics && hasAchievements) {
-        strengths.push("Outstanding! You're quantifying your impact with actual numbers and metrics. This is exactly what separates good resumes from great ones - ${companyData.name} loves seeing measurable results.");
+        strengths.push(`✓ Excellent use of quantifiable metrics and achievements. This data-driven approach resonates well with ${companyData.name}'s hiring managers.`);
+    } else if (hasAchievements) {
+        strengths.push(`✓ Achievement-focused language shows impact. Adding specific numbers/percentages would make this even stronger.`);
     }
     
-    // Education strength - specific with CGPA
+    // Education strength - more realistic with CGPA
     if (hasEducation && hasCGPA && cgpaValue !== null) {
         if (cgpaValue >= 9.0) {
-            strengths.push(`Wow! Your ${cgpaValue.toFixed(2)} CGPA is outstanding${degreeName ? ` in ${degreeName}` : ''}! This demonstrates strong academic excellence that ${companyData.name} highly values.`);
+            strengths.push(`✓ Outstanding academic record with ${cgpaValue.toFixed(2)} CGPA${degreeName ? ` in ${degreeName}` : ''}. This demonstrates exceptional academic excellence valued by ${companyData.name}.`);
         } else if (cgpaValue >= 8.0) {
-            strengths.push(`Great academic performance with ${cgpaValue.toFixed(2)} CGPA${degreeName ? ` in ${degreeName}` : ''}! This shows consistency and dedication - exactly what ${companyData.name} looks for.`);
-        } else {
-            strengths.push(`Your educational background is clearly presented${degreeName ? ` with ${degreeName}` : ''}${institution ? ` from ${institution}` : ''}. ${companyData.name} appreciates seeing complete education details.`);
+            strengths.push(`✓ Strong academic performance (${cgpaValue.toFixed(2)} CGPA)${degreeName ? ` in ${degreeName}` : ''} shows consistency and dedication.`);
+        } else if (cgpaValue >= 7.0) {
+            strengths.push(`✓ Solid educational foundation${degreeName ? ` with ${degreeName}` : ''}${institution ? ` from ${institution}` : ''}.`);
         }
     } else if (hasEducation) {
-        strengths.push(`Clear educational background${degreeName ? `: ${degreeName}` : ''}${institution ? ` from ${institution}` : ''}. Consider adding your GPA/CGPA if it's strong (>7.5) - ${companyData.name} pays attention to academic performance.`);
+        strengths.push(`✓ Educational background is clearly presented${degreeName ? `: ${degreeName}` : ''}. ${!hasCGPA ? 'Consider adding GPA/CGPA if it\'s strong (≥7.5).' : ''}`);
+    }
+    
+    // Projects strength
+    if (hasProjects && foundSkills.length > 5) {
+        strengths.push(`✓ Projects section demonstrates hands-on experience beyond academics/work. This practical exposure is valuable for ${companyData.name}.`);
     }
     
     if (strengths.length === 0) {
@@ -311,62 +343,62 @@ function analyzeResumeSmartly(resumeText, companyData) {
     if (foundSkills.length < 8) {
         improvementPool.push({
             category: "Technical Skills",
-            issue: "Could add more relevant technologies",
-            suggestion: `${companyData.name} actively uses ${relevantTech.join(', ')} in their tech stack. Add any of these you have experience with, even from personal projects or coursework!`,
+            issue: `Limited technical skills listed (${foundSkills.length} found)`,
+            suggestion: `Expand your skills section to include ${relevantTech.slice(0, 2).join(' and ')} if you have experience with them. ${companyData.name} uses these technologies extensively. Even coursework or personal project experience counts!`,
             priority: "high"
         });
     }
     
     if (!hasLinkedIn) {
         improvementPool.push({
-            category: "Professional Profile",
-            issue: "Missing LinkedIn profile",
-            suggestion: `Add your LinkedIn URL! 87% of ${companyData.name} recruiters search candidates on LinkedIn first. Make sure your profile is updated with the same info as your resume.`,
+            category: "Professional Presence",
+            issue: "LinkedIn profile URL not included",
+            suggestion: `Add your LinkedIn profile link. 85% of ${companyData.name}'s recruiters check LinkedIn during candidate evaluation. Ensure your profile mirrors your resume content.`,
             priority: "high"
         });
     }
     
-    if (!hasGithub && (companyKey === 'google' || companyKey === 'microsoft' || companyKey === 'amazon')) {
+    if (!hasGithub && (companyKey === 'google' || companyKey === 'microsoft' || companyKey === 'amazon' || companyKey === 'meta')) {
         improvementPool.push({
             category: "Technical Portfolio",
-            issue: "No GitHub profile found",
-            suggestion: `${companyData.name} loves seeing code samples! Add your GitHub URL and pin 2-3 of your best projects that use ${relevantTech.slice(0, 2).join(' or ')}.`,
+            issue: "GitHub profile not found",
+            suggestion: `Include your GitHub URL if you have one. ${companyData.name} values engineers who share code publicly. Pin 2-3 projects that showcase ${relevantTech.slice(0, 2).join(', ')}, or similar technologies.`,
             priority: "medium"
         });
     }
     
     if (!hasMetrics) {
         improvementPool.push({
-            category: "Impact & Results",
-            issue: "Missing quantifiable achievements",
-            suggestion: `Add numbers to 2-3 bullet points: 'Reduced API response time by 40%', 'Built feature used by 5,000+ users', 'Improved test coverage from 60% to 90%'. ${companyData.name} wants to see measurable impact!`,
+            category: "Quantifiable Impact",
+            issue: "No measurable achievements or metrics",
+            suggestion: `Transform 2-3 bullets into quantified achievements: "Reduced load time by 35%", "Built feature serving 10K+ users daily", "Improved code coverage from 45% to 82%". Metrics demonstrate real impact to ${companyData.name} hiring managers.`,
             priority: "high"
         });
     }
     
     if (!hasCGPA && hasEducation) {
         improvementPool.push({
-            category: "Education",
-            issue: "GPA/CGPA not mentioned",
-            suggestion: "If your CGPA is above 7.5 (or GPA above 3.0), definitely add it! Academic performance matters to recruiters, especially for early-career positions.",
+            category: "Academic Credentials",
+            issue: "GPA/CGPA not specified",
+            suggestion: "Include your GPA/CGPA if it's ≥7.5 (or ≥3.0 on 4.0 scale). Strong academic performance carries weight, particularly for early-to-mid career positions.",
             priority: "medium"
         });
     }
     
     if (!hasProjects && foundSkills.length < 10) {
         improvementPool.push({
-            category: "Projects",
-            issue: "Limited project section",
-            suggestion: `Add 2-3 personal or academic projects using ${relevantTech[0]} or ${relevantTech[1]}. Include: what you built, technologies used, and impact/results. ${companyData.name} values hands-on experience!`,
+            category: "Hands-on Experience",
+            issue: "Projects section is missing or minimal",
+            suggestion: `Create a Projects section with 2-3 entries showcasing ${relevantTech[0]}, ${relevantTech[1]}, or related tech. Structure: Project name, tech stack used, brief description (2-3 lines), and measurable outcome. ${companyData.name} evaluates practical experience heavily.`,
             priority: "high"
         });
     }
     
     if (!hasAchievements) {
         improvementPool.push({
-            category: "Achievements",
-            issue: "No clear achievements highlighted",
-            suggestion: `Use action verbs: 'Achieved', 'Improved', 'Increased', 'Reduced', 'Optimized'. Show how you made things better, not just what you did. ${companyData.name} seeks problem-solvers!`,
+            category: "Results-Oriented Language",
+            issue: "Limited use of achievement-focused verbs",
+            suggestion: `Start bullet points with strong action verbs: 'Engineered', 'Optimized', 'Architected', 'Reduced', 'Increased', 'Accelerated'. Follow with the specific impact. Example: "Optimized database queries, reducing response time from 800ms to 120ms." This demonstrates ownership - a key value at ${companyData.name}.`,
             priority: "medium"
         });
     }
@@ -374,9 +406,18 @@ function analyzeResumeSmartly(resumeText, companyData) {
     if (wordCount < 300) {
         improvementPool.push({
             category: "Content Depth",
-            issue: "Resume seems brief",
-            suggestion: "Expand your experience and project descriptions. Aim for 400-600 words total. Add more details about your role, technologies used, challenges faced, and results achieved.",
+            issue: `Resume appears brief (≈${wordCount} words)`,
+            suggestion: "Aim for 400-650 words total. Expand experience/project descriptions with: specific technologies used, challenges overcome, your role in the team, and measurable outcomes. Be concise but comprehensive.",
             priority: "medium"
+        });
+    }
+    
+    if (!hasStructure || !hasBulletPoints) {
+        improvementPool.push({
+            category: "Format & Readability",
+            issue: "Inconsistent structure or formatting",
+            suggestion: "Organize with clear sections: Contact → Summary/Objective → Experience → Projects → Education → Skills. Use consistent bullet points (• or –) throughout. This improves ATS parsing and recruiter readability.",
+            priority: "low"
         });
     }
     
@@ -441,11 +482,13 @@ function analyzeResumeSmartly(resumeText, companyData) {
             "Use bold section headers and consistent bullet point style",
             "Leave 0.5-1 inch margins on all sides for readability"
         ],
-        summaryRecommendation: score >= 80 ?
-            `You're in excellent shape for ${companyData.name}! ${hasCGPA && cgpaValue !== null && cgpaValue >= 9.0 ? 'Your strong CGPA backs up' : 'Your experience and skills show'} you're ready. Polish those metrics and you'll be interview-ready. 🚀` :
-            score >= 65 ?
-            `Solid foundation for ${companyData.name}! Focus on adding their key technologies (${relevantTech.slice(0, 2).join(', ')}) and quantifying your achievements with numbers.` :
-            `Good starting point! Add more technical skills (especially ${relevantTech[0]}), quantify your impact with metrics, and ${!hasCGPA ? 'include your GPA/CGPA if strong' : 'highlight your achievements'}.`,
+        summaryRecommendation: score >= 75 ?
+            `Strong application for ${companyData.name}! ${hasCGPA && cgpaValue !== null && cgpaValue >= 8.5 ? 'Your solid academic record combined with' : 'Your'} relevant experience positions you well. ${hasMetrics ? 'Keep' : 'Add more'} quantifiable metrics and ensure ${relevantTech[0]} proficiency is highlighted.` :
+            score >= 60 ?
+            `Good foundation for ${companyData.name}. Priority improvements: ${!hasMetrics ? '1) Add quantifiable achievements with numbers/percentages, ' : ''}${foundSkills.length < 8 ? '2) Expand technical skills (especially ' + relevantTech.slice(0, 2).join(' and ') + '), ' : ''}${!hasProjects ? '3) Include 2-3 relevant projects.' : '3) Strengthen project descriptions with metrics.'}` :
+            score >= 45 ?
+            `Needs development for ${companyData.name}. Focus on: ${!hasMetrics ? 'Adding measurable achievements, ' : ''}${foundSkills.length < 6 ? 'expanding technical skills (' + relevantTech[0] + ', ' + relevantTech[1] + '), ' : ''}${!hasProjects ? 'creating a projects section, ' : ''}and ${!hasCGPA && hasEducation ? 'including GPA/CGPA if ≥7.5' : 'quantifying your impact'}.` :
+            `Requires significant improvement. Start with: 1) Building a comprehensive skills section (target ${relevantTech.slice(0, 3).join(', ')}), 2) Adding 2-3 projects with measurable outcomes, 3) Including all contact info and ${!hasLinkedIn ? 'LinkedIn profile' : 'complete education details'}.`,
         resumeDetails: {
             cgpa: (cgpaValue !== null && !isNaN(cgpaValue)) ? cgpaValue.toFixed(2) : null,
             degree: degreeName,

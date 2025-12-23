@@ -685,7 +685,7 @@ app.get('/api/companies/search', async (req, res) => {
   }
 });
 
-// GET /api/companies/:slug - Get company details by slug (with subscription check)
+// GET /api/companies/:slug - Get company details by slug (FREE - No subscription check)
 app.get('/api/companies/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
@@ -694,52 +694,6 @@ app.get('/api/companies/:slug', async (req, res) => {
       return res.status(400).json({ 
         success: false,
         error: 'Company slug is required' 
-      });
-    }
-    
-    // Get or create subscription for user/guest
-    let subscription;
-    let userId = null;
-    
-    if (req.isAuthenticated()) {
-      userId = req.user._id;
-    } else {
-      // For guest users, use session-based tracking
-      if (!req.session.guestId) {
-        req.session.guestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      }
-      
-      // Find or create guest user
-      let guestUser = await User.findOne({ guestId: req.session.guestId });
-      if (!guestUser) {
-        guestUser = await User.create({
-          name: 'Guest User',
-          email: `${req.session.guestId}@guest.careercraft.com`,
-          guestId: req.session.guestId
-        });
-      }
-      userId = guestUser._id;
-    }
-    
-    // Get or create subscription
-    subscription = await Subscription.findOne({ userId });
-    if (!subscription) {
-      subscription = await Subscription.create({ userId });
-    }
-    
-    // Check if user has remaining views
-    if (!subscription.hasRemainingViews()) {
-      return res.status(403).json({
-        success: false,
-        error: 'View limit reached',
-        requiresSubscription: true,
-        message: 'You have used all your free views. Upgrade to Premium for unlimited access!',
-        subscription: {
-          plan: subscription.plan,
-          viewsUsed: subscription.companiesViewed,
-          viewsLimit: subscription.freeViewsLimit,
-          remaining: 0
-        }
       });
     }
     
@@ -752,18 +706,9 @@ app.get('/api/companies/:slug', async (req, res) => {
       });
     }
     
-    // Increment view count
-    await subscription.incrementViews();
-    
     res.json({ 
       success: true,
-      data: company,
-      subscription: {
-        plan: subscription.plan,
-        viewsUsed: subscription.companiesViewed,
-        viewsLimit: subscription.freeViewsLimit,
-        remaining: subscription.getRemainingViews()
-      }
+      data: company
     });
   } catch (error) {
     console.error('Company fetch error:', error);
@@ -892,8 +837,8 @@ app.get('/api/subscription/status', async (req, res) => {
           success: true,
           data: {
             plan: 'free',
-            viewsUsed: 0,
-            viewsLimit: 10,
+            analysesUsed: 0,
+            analysesLimit: 10,
             remaining: 10,
             isGuest: true
           }
@@ -906,8 +851,8 @@ app.get('/api/subscription/status', async (req, res) => {
           success: true,
           data: {
             plan: 'free',
-            viewsUsed: 0,
-            viewsLimit: 10,
+            analysesUsed: 0,
+            analysesLimit: 10,
             remaining: 10,
             isGuest: true
           }
@@ -925,9 +870,9 @@ app.get('/api/subscription/status', async (req, res) => {
       success: true,
       data: {
         plan: subscription.plan,
-        viewsUsed: subscription.companiesViewed,
-        viewsLimit: subscription.freeViewsLimit,
-        remaining: subscription.getRemainingViews(),
+        analysesUsed: subscription.resumeAnalysesUsed,
+        analysesLimit: subscription.freeAnalysesLimit,
+        remaining: subscription.getRemainingAnalyses(),
         isActive: subscription.isActive,
         isPremium: subscription.plan === 'premium',
         premiumEndDate: subscription.premiumEndDate,
@@ -994,6 +939,38 @@ app.post('/api/subscription/upgrade', async (req, res) => {
   }
 });
 
+// POST /api/subscription/reset - Reset subscription (for migration/testing)
+app.post('/api/subscription/reset', async (req, res) => {
+  try {
+    // Reset ALL subscriptions to use new resumeAnalysesUsed field
+    const result = await Subscription.updateMany(
+      {},
+      {
+        $set: { 
+          resumeAnalysesUsed: 0,
+          freeAnalysesLimit: 10
+        },
+        $unset: { 
+          companiesViewed: '',
+          freeViewsLimit: ''
+        }
+      }
+    );
+    
+    res.json({
+      success: true,
+      message: 'All subscriptions reset successfully',
+      updated: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('Reset error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to reset subscriptions'
+    });
+  }
+});
+
 // GET /api/subscription/pricing - Get pricing information
 app.get('/api/subscription/pricing', (req, res) => {
   res.json({
@@ -1036,23 +1013,49 @@ app.get('/api/subscription/pricing', (req, res) => {
 // POST /api/resumes/upload - Upload resume file
 app.post('/api/resumes/upload', upload.single('resume'), (req, res) => {
   try {
+    console.log('Upload request received');
+    console.log('File:', req.file);
+    console.log('Body:', req.body);
+    
     if (!req.file) {
+      console.error('No file in request');
       return res.status(400).json({ 
         success: false,
-        error: 'No file uploaded' 
+        error: 'No file uploaded. Please select a resume file.' 
       });
     }
     
-    // Validate file type
-    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    // Validate file type - Allow PDF, documents, and images
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/bmp',
+      'image/tiff',
+      'image/webp'
+    ];
+    
+    console.log('File mimetype:', req.file.mimetype);
+    
     if (!allowedTypes.includes(req.file.mimetype)) {
       // Delete uploaded file
-      fs.unlinkSync(req.file.path);
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (err) {
+        console.error('Error deleting invalid file:', err);
+      }
       return res.status(400).json({ 
         success: false,
-        error: 'Invalid file type. Only PDF and DOC files are allowed.' 
+        error: `Invalid file type: ${req.file.mimetype}. Please upload PDF, DOC, DOCX, TXT, or image files (JPG, PNG, etc.).` 
       });
     }
+    
+    console.log('File uploaded successfully:', req.file.filename);
     
     res.json({ 
       success: true,
@@ -1069,12 +1072,12 @@ app.post('/api/resumes/upload', upload.single('resume'), (req, res) => {
     console.error('Upload error:', error);
     res.status(500).json({ 
       success: false,
-      error: 'File upload failed' 
+      error: 'File upload failed: ' + error.message 
     });
   }
 });
 
-// POST /api/resumes/analyze - Analyze resume for specific company
+// POST /api/resumes/analyze - Analyze resume for specific company (with subscription check)
 app.post('/api/resumes/analyze', async (req, res) => {
   try {
     const { filename, companySlug } = req.body;
@@ -1090,6 +1093,52 @@ app.post('/api/resumes/analyze', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Company information is required'
+      });
+    }
+
+    // Get or create subscription for user/guest
+    let subscription;
+    let userId = null;
+    
+    if (req.isAuthenticated()) {
+      userId = req.user._id;
+    } else {
+      // For guest users, use session-based tracking
+      if (!req.session.guestId) {
+        req.session.guestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      }
+      
+      // Find or create guest user
+      let guestUser = await User.findOne({ guestId: req.session.guestId });
+      if (!guestUser) {
+        guestUser = await User.create({
+          name: 'Guest User',
+          email: `${req.session.guestId}@guest.careercraft.com`,
+          guestId: req.session.guestId
+        });
+      }
+      userId = guestUser._id;
+    }
+    
+    // Get or create subscription
+    subscription = await Subscription.findOne({ userId });
+    if (!subscription) {
+      subscription = await Subscription.create({ userId });
+    }
+    
+    // Check if user has remaining analyses
+    if (!subscription.hasRemainingAnalyses()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Analysis limit reached',
+        requiresSubscription: true,
+        message: 'You have used all your free resume analyses. Upgrade to Premium for unlimited access!',
+        subscription: {
+          plan: subscription.plan,
+          analysesUsed: subscription.resumeAnalysesUsed,
+          analysesLimit: subscription.freeAnalysesLimit,
+          remaining: 0
+        }
       });
     }
     
@@ -1146,6 +1195,9 @@ app.post('/api/resumes/analyze', async (req, res) => {
     console.log('Getting ATS suggestions...');
     const atsAnalysis = await resumeAnalyzer.generateATSSuggestions(resumeText);
     
+    // Increment analysis count (only after successful analysis)
+    await subscription.incrementAnalyses();
+    
     console.log('Analysis completed successfully!');
     
     res.json({
@@ -1158,6 +1210,12 @@ app.post('/api/resumes/analyze', async (req, res) => {
         },
         analysis,
         atsAnalysis
+      },
+      subscription: {
+        plan: subscription.plan,
+        analysesUsed: subscription.resumeAnalysesUsed,
+        analysesLimit: subscription.freeAnalysesLimit,
+        remaining: subscription.getRemainingAnalyses()
       }
     });
     

@@ -171,17 +171,40 @@ function updateSubscriptionBanner() {
     if (typeof remaining === 'number') {
         remainingViews.textContent = remaining;
         
-        if (remaining <= 3 && remaining > 0) {
-            banner.style.display = 'flex';
-            banner.classList.add('warning');
-        } else if (remaining === 0) {
+        // Remove old classes
+        banner.classList.remove('warning', 'danger');
+        
+        if (remaining === 0) {
             banner.style.display = 'flex';
             banner.classList.add('danger');
-            document.querySelector('.banner-text').innerHTML = '<strong>No free views remaining!</strong> Upgrade to continue';
-        } else if (remaining <= 5) {
+            document.querySelector('.banner-text').innerHTML = '<strong>No free resume analyses remaining!</strong> Upgrade to continue';
+        } else if (remaining <= 3) {
             banner.style.display = 'flex';
+            banner.classList.add('warning');
+            document.querySelector('.banner-text').innerHTML = `<strong id="remainingViews">${remaining}</strong> free resume analyses remaining`;
+        } else {
+            banner.style.display = 'flex';
+            document.querySelector('.banner-text').innerHTML = `<strong id="remainingViews">${remaining}</strong> free resume analyses remaining`;
         }
     }
+}
+
+// Show notification with animation after resume analysis
+function showAnalysisCountNotification(remaining) {
+    const banner = document.getElementById('subscriptionBanner');
+    
+    // Add shake animation
+    banner.style.animation = 'none';
+    setTimeout(() => {
+        banner.style.animation = 'slideDown 0.5s ease-out, shake 0.5s ease-in-out 0.5s';
+    }, 10);
+    
+    // Show notification
+    const message = remaining === 0 
+        ? 'You\'ve used all your free analyses! Upgrade to continue.' 
+        : `Analysis complete! ${remaining} free ${remaining === 1 ? 'analysis' : 'analyses'} remaining.`;
+    
+    showNotification(message, remaining === 0 ? 'error' : 'success');
 }
 
 // Check if user is logged in on page load
@@ -716,18 +739,7 @@ async function showCompanyDetails(slug) {
         });
         const data = await response.json();
         
-        if (response.status === 403 && data.requiresSubscription) {
-            // Show subscription modal
-            showSubscriptionLimitModal(data);
-            return;
-        }
-        
         if (data.success && data.data) {
-            // Update subscription status if provided
-            if (data.subscription) {
-                subscriptionStatus = data.subscription;
-                updateSubscriptionBanner();
-            }
             
             displayCompanyModal(data.data);
         } else {
@@ -762,7 +774,7 @@ function handleUpgrade() {
     // In production, integrate with payment gateway (Razorpay, Stripe, etc.)
     showConfirmDialog(
         '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 8px; vertical-align: middle;"><path d="M12 2L2 22h20L12 2z" fill="url(#starGradient)"/><defs><linearGradient id="starGradient"><stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#FFA500"/></linearGradient></defs></svg>Upgrade to Premium',
-        '<div style="text-align: left;"><strong style="color: var(--primary-color); font-size: 1.3rem;">₹149/month</strong><br><br><span style="color: #00ff88;">✓</span> Unlimited company views<br><span style="color: #00ff88;">✓</span> Full access to all features<br><span style="color: #00ff88;">✓</span> Priority support<br><br><small style="color: #888;">Note: This is a demo. In production, you will be redirected to payment gateway.</small></div>',
+        '<div style="text-align: left;"><strong style="color: var(--primary-color); font-size: 1.3rem;">₹149/month</strong><br><br><span style="color: #00ff88;">✓</span> Unlimited resume analyses<br><span style="color: #00ff88;">✓</span> Full access to all features<br><span style="color: #00ff88;">✓</span> Priority support<br><br><small style="color: #888;">Note: This is a demo. In production, you will be redirected to payment gateway.</small></div>',
         () => upgradeToPremium(),
         null
     );
@@ -1620,7 +1632,22 @@ async function analyzeResume() {
         console.log('Analysis complete!');
         
         if (!analysisData.success) {
+            // Check if it's a subscription limit issue
+            if (analysisResponse.status === 403 && analysisData.requiresSubscription) {
+                closeModal('analysis');
+                showSubscriptionLimitModal(analysisData);
+                return;
+            }
             throw new Error(analysisData.error || 'Failed to analyze resume');
+        }
+        
+        // Update subscription status if provided
+        if (analysisData.subscription) {
+            subscriptionStatus = analysisData.subscription;
+            updateSubscriptionBanner();
+            
+            // Show animated notification for remaining analyses
+            showAnalysisCountNotification(analysisData.subscription.remaining);
         }
         
         // Display results
@@ -1898,7 +1925,7 @@ async function fetchCompanyEmployees(companyName) {
                 <div class="analysis-section">
                     <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Network with ${companyName} Employees</h3>
                     <div class="info-message">
-                        <p>We couldn't fetch employee profiles automatically, but here are some great ways to connect:</p>
+                        <p>Below are the networking options to connect with employees:</p>
                     </div>
                     ${displayNetworkingSuggestions(data.suggestions)}
                 </div>

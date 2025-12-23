@@ -12,11 +12,11 @@ const subscriptionSchema = new mongoose.Schema({
     enum: ['free', 'premium'],
     default: 'free'
   },
-  companiesViewed: {
+  resumeAnalysesUsed: {
     type: Number,
     default: 0
   },
-  freeViewsLimit: {
+  freeAnalysesLimit: {
     type: Number,
     default: 10
   },
@@ -43,26 +43,26 @@ const subscriptionSchema = new mongoose.Schema({
   }
 });
 
-// Check if user has remaining free views
-subscriptionSchema.methods.hasRemainingViews = function() {
+// Check if user has remaining free resume analyses
+subscriptionSchema.methods.hasRemainingAnalyses = function() {
   if (this.plan === 'premium' && this.isActive && new Date() < this.premiumEndDate) {
-    return true; // Premium users have unlimited views
+    return true; // Premium users have unlimited analyses
   }
-  return this.companiesViewed < this.freeViewsLimit;
+  return this.resumeAnalysesUsed < this.freeAnalysesLimit;
 };
 
-// Get remaining views
-subscriptionSchema.methods.getRemainingViews = function() {
+// Get remaining analyses
+subscriptionSchema.methods.getRemainingAnalyses = function() {
   if (this.plan === 'premium' && this.isActive && new Date() < this.premiumEndDate) {
     return 'Unlimited';
   }
-  return Math.max(0, this.freeViewsLimit - this.companiesViewed);
+  return Math.max(0, this.freeAnalysesLimit - this.resumeAnalysesUsed);
 };
 
-// Increment view count
-subscriptionSchema.methods.incrementViews = async function() {
+// Increment resume analysis count
+subscriptionSchema.methods.incrementAnalyses = async function() {
   if (this.plan === 'free') {
-    this.companiesViewed += 1;
+    this.resumeAnalysesUsed += 1;
     await this.save();
   }
 };
