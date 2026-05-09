@@ -69,6 +69,12 @@ function showConfirmDialog(title, message, onConfirm, onCancel) {
 function openModal(modalId) {
     const modal = document.getElementById(modalId + 'Modal');
     if (modal) {
+        if (modalId === 'subscription') {
+            const subtitle = modal.querySelector('.subscription-subtitle');
+            if (subtitle) {
+                subtitle.textContent = subscriptionPromptMessage || defaultSubscriptionSubtitle;
+            }
+        }
         modal.classList.add('active');
         document.body.style.overflow = 'hidden';
     }
@@ -79,12 +85,45 @@ function closeModal(modalId) {
     if (modal) {
         modal.classList.remove('active');
         document.body.style.overflow = 'auto';
+
+        if (modalId === 'subscription') {
+            subscriptionPromptMessage = null;
+        }
     }
 }
 
 function switchModal(closeId, openId) {
     closeModal(closeId);
     setTimeout(() => openModal(openId), 300);
+}
+
+function openResumeUploadModal(options = {}) {
+    const { closeModalId = null, title = null } = options;
+
+    if (!currentUser) {
+        if (closeModalId) {
+            closeModal(closeModalId);
+        }
+        showNotification('Please sign in to upload and analyze resumes.', 'info');
+        setTimeout(() => openModal('signin'), 300);
+        return;
+    }
+
+    if (closeModalId) {
+        closeModal(closeModalId);
+    }
+
+    setTimeout(() => {
+        openModal('upload');
+
+        if (title) {
+            const uploadModal = document.getElementById('uploadModal');
+            const modalTitle = uploadModal ? uploadModal.querySelector('h2') : null;
+            if (modalTitle) {
+                modalTitle.textContent = title;
+            }
+        }
+    }, 300);
 }
 
 // Close modal when clicking outside
@@ -136,6 +175,24 @@ async function unlinkLinkedIn() {
 // Auth State Management
 let currentUser = null;
 let subscriptionStatus = null;
+const defaultSubscriptionSubtitle = "You've reached your free view limit!";
+let subscriptionPromptMessage = null;
+
+function hasPremiumAccess() {
+    return Boolean(
+        (subscriptionStatus && subscriptionStatus.isPremium) ||
+        (currentUser && (currentUser.isPremium || currentUser.subscriptionPlan === 'premium'))
+    );
+}
+
+function setSubscriptionPrompt(message) {
+    subscriptionPromptMessage = message || defaultSubscriptionSubtitle;
+
+    const subtitle = document.querySelector('#subscriptionModal .subscription-subtitle');
+    if (subtitle) {
+        subtitle.textContent = subscriptionPromptMessage;
+    }
+}
 
 // Check subscription status
 async function checkSubscriptionStatus() {
@@ -251,6 +308,9 @@ function updateUIForLoggedInUser(user) {
     
     // Update LinkedIn button
     updateLinkedInButton(user);
+
+    // Refresh premium status after auth changes
+    checkSubscriptionStatus();
 }
 
 function updateLinkedInButton(user) {
@@ -282,6 +342,8 @@ function updateUIForLoggedOutUser() {
     document.getElementById('authButtons').style.display = 'flex';
     document.getElementById('userMenu').style.display = 'none';
     currentUser = null;
+    subscriptionStatus = null;
+    updateSubscriptionBanner();
     
     // Reset LinkedIn button
     updateLinkedInButton(null);
@@ -762,8 +824,12 @@ function showSubscriptionLimitModal(data) {
     closeModal('company');
     hideSuggestions();
     
-    // Update the modal with usage info if needed
-    const modal = document.getElementById('subscriptionModal');
+    setSubscriptionPrompt(data?.message || defaultSubscriptionSubtitle);
+    openModal('subscription');
+}
+
+function showPremiumUpgradePrompt(message) {
+    setSubscriptionPrompt(message || 'Upgrade to Premium to unlock this feature.');
     openModal('subscription');
 }
 
@@ -777,58 +843,238 @@ function handleUpgrade() {
         return;
     }
     
-    // In production, integrate with payment gateway (Razorpay, Stripe, etc.)
-    showConfirmDialog(
-        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 8px; vertical-align: middle;"><path d="M12 2L2 22h20L12 2z" fill="url(#starGradient)"/><defs><linearGradient id="starGradient"><stop offset="0%" stop-color="#FFD700"/><stop offset="100%" stop-color="#FFA500"/></linearGradient></defs></svg>Upgrade to Premium',
-        '<div style="text-align: left;"><strong style="color: var(--primary-color); font-size: 1.3rem;">₹149/month</strong><br><br><span style="color: #00ff88;">✓</span> Unlimited resume analyses<br><span style="color: #00ff88;">✓</span> Full access to all features<br><span style="color: #00ff88;">✓</span> Priority support<br><br><small style="color: #888;">Note: This is a demo. In production, you will be redirected to payment gateway.</small></div>',
-        () => upgradeToPremium(),
-        null
-    );
+    // Open payment flow
+    showUpgradePaymentFlow();
 }
 
-// Upgrade to premium
-async function upgradeToPremium() {
+/**
+ * Show payment flow for premium upgrade
+ * This handles the entire upgrade process:
+ * 1. Initiate payment order
+ * 2. Collect payment details (in production: Razorpay, Stripe, etc.)
+ * 3. Confirm payment and activate premium
+ */
+async function showUpgradePaymentFlow() {
     try {
-        const response = await fetch('/api/subscription/upgrade', {
+        // Step 1: Initiate upgrade to get order details
+        const initiateResponse = await fetch('/api/subscription/initiate-upgrade', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+        });
+        
+        const initiateData = await initiateResponse.json();
+        
+        if (!initiateData.success) {
+            // User might already be premium
+            if (initiateData.code === 'ALREADY_PREMIUM') {
+                showNotification(
+                    `You're already a premium member! Premium active until ${new Date(initiateData.data?.premiumEndDate).toLocaleDateString()}`,
+                    'info'
+                );
+                closeModal('subscription');
+                return;
+            }
+            
+            showNotification(initiateData.error || 'Failed to initiate upgrade', 'error');
+            return;
+        }
+        
+        const orderData = initiateData.data;
+        
+        // Step 2: Show payment dialog
+        showPaymentDialog(orderData);
+        
+    } catch (error) {
+        console.error('Upgrade initiation error:', error);
+        showNotification('Failed to initiate upgrade. Please try again.', 'error');
+    }
+}
+
+/**
+ * Show payment dialog for demo or real payment gateway integration
+ */
+function showPaymentDialog(orderData) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    modal.id = 'paymentModal';
+    
+    const daysRemaining = Math.ceil(orderData.amount / 14900 * 30); // Calculate days based on amount
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px; background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);">
+            <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">
+                <img src="https://api.iconify.design/mdi:close.svg?color=%23a0a0a0" width="24" height="24" alt="Close">
+            </button>
+            
+            <div class="modal-header">
+                <h2 style="color: #00d9ff;">Complete Your Upgrade</h2>
+                <p style="color: #888;">Secure payment process</p>
+            </div>
+            
+            <div class="modal-body" style="padding: 30px;">
+                <!-- Order Summary -->
+                <div style="background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.3); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+                        <span style="color: #b4b4c5;">Premium Plan (30 days)</span>
+                        <span style="color: #00d9ff; font-weight: 600;">₹${(orderData.amount / 100).toFixed(2)}</span>
+                    </div>
+                    <div style="border-top: 1px solid rgba(0, 217, 255, 0.2); padding-top: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #00ff88; font-weight: 600;">Total</span>
+                            <span style="font-size: 1.3rem; color: #00d9ff; font-weight: bold;">₹${(orderData.amount / 100).toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Benefits Reminder -->
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin: 0 0 12px 0; color: #e0e0e0;">You'll get:</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        ${orderData.planDetails.features.map(feature => `
+                            <li style="padding: 6px 0; color: #b4b4c5;">
+                                <span style="color: #00ff88; margin-right: 8px;">✓</span> ${feature}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+                
+                <!-- Payment Methods -->
+                <div style="margin-bottom: 24px;">
+                    <h4 style="margin: 0 0 12px 0; color: #e0e0e0;">Payment Method</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <button class="payment-method-btn selected" onclick="selectPaymentMethod(this, 'card')" style="background: rgba(0, 217, 255, 0.2); border: 2px solid #00d9ff; padding: 12px; border-radius: 8px; color: #00d9ff; cursor: pointer; font-weight: 600;">
+                            💳 Card
+                        </button>
+                        <button class="payment-method-btn" onclick="selectPaymentMethod(this, 'upi')" style="background: rgba(100, 100, 120, 0.2); border: 2px solid #666; padding: 12px; border-radius: 8px; color: #b4b4c5; cursor: pointer; font-weight: 600;">
+                            📱 UPI
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Card Details (Demo) -->
+                <div id="cardDetails" style="display: block; margin-bottom: 24px;">
+                    <h4 style="margin: 0 0 12px 0; color: #e0e0e0;">Card Details (Demo)</h4>
+                    <input type="text" placeholder="4532 1234 5678 9010" style="width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #333; border-radius: 6px; color: #e0e0e0; margin-bottom: 10px; font-family: monospace;">
+                    <input type="text" placeholder="MM/YY" style="width: 48%; padding: 10px; background: #1a1a2e; border: 1px solid #333; border-radius: 6px; color: #e0e0e0; margin-right: 4%; font-family: monospace;">
+                    <input type="text" placeholder="CVV" style="width: 48%; padding: 10px; background: #1a1a2e; border: 1px solid #333; border-radius: 6px; color: #e0e0e0; font-family: monospace;">
+                    <p style="color: #888; font-size: 12px; margin-top: 8px;">
+                        🔒 This is a demo. Use any card details. In production, PCI-compliant payment gateway will be used.
+                    </p>
+                </div>
+                
+                <!-- Buttons -->
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary" onclick="confirmPaymentDemo('${orderData.orderId}')" id="payBtn">
+                        <span id="payBtnText">💳 Pay ₹${(orderData.amount / 100).toFixed(2)}</span>
+                    </button>
+                </div>
+                
+                <p style="color: #666; font-size: 12px; text-align: center; margin-top: 16px;">
+                    Safe & Secure • SSL Encrypted
+                </p>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Close on overlay click
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    };
+}
+
+function selectPaymentMethod(btn, method) {
+    document.querySelectorAll('.payment-method-btn').forEach(b => {
+        b.style.background = 'rgba(100, 100, 120, 0.2)';
+        b.style.borderColor = '#666';
+        b.style.color = '#b4b4c5';
+    });
+    
+    btn.style.background = 'rgba(0, 217, 255, 0.2)';
+    btn.style.borderColor = '#00d9ff';
+    btn.style.color = '#00d9ff';
+    btn.classList.add('selected');
+}
+
+/**
+ * Confirm demo payment and activate premium
+ */
+async function confirmPaymentDemo(orderId) {
+    try {
+        const payBtn = document.getElementById('payBtn');
+        const payBtnText = document.getElementById('payBtnText');
+        const originalText = payBtnText.innerHTML;
+        
+        // Show loading
+        payBtn.disabled = true;
+        payBtnText.innerHTML = '<span style="opacity: 0.6;">Processing...</span>';
+        
+        // Simulate payment processing (1-2 seconds)
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Step 3: Confirm upgrade with payment details
+        const confirmResponse = await fetch('/api/subscription/confirm-upgrade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({
-                transactionId: `DEMO_TXN_${Date.now()}`
+                paymentId: `DEMO_PAY_${Date.now()}`,
+                orderId: orderId,
+                signature: 'demo-signature'
             })
         });
         
-        const data = await response.json();
+        const confirmData = await confirmResponse.json();
         
-        if (data.success) {
+        if (confirmData.success) {
+            // Close payment modal
+            const paymentModal = document.getElementById('paymentModal');
+            if (paymentModal) paymentModal.remove();
+            
+            // Close subscription modal
             closeModal('subscription');
             
             // Update subscription status
-            subscriptionStatus = {
-                plan: 'premium',
-                remaining: 'Unlimited',
-                isPremium: true
-            };
-            updateSubscriptionBanner();
+            await checkSubscriptionStatus();
             
-            // Show success message
+            // Show success notification
+            showNotification('✨ Welcome to Premium! Enjoy unlimited access.', 'success');
+            
+            // Refresh page data if needed
             setTimeout(() => {
-                showNotification('Welcome to Premium! You now have unlimited access.', 'success');
-            }, 300);
+                location.reload();
+            }, 2000);
         } else {
-            showNotification(data.error || 'Upgrade failed. Please try again.', 'error');
+            payBtn.disabled = false;
+            payBtnText.innerHTML = originalText;
+            showNotification(confirmData.error || 'Payment failed. Please try again.', 'error');
         }
     } catch (error) {
-        console.error('Upgrade error:', error);
-        showNotification('Upgrade failed. Please try again later.', 'error');
+        console.error('Payment confirmation error:', error);
+        payBtn.disabled = false;
+        payBtnText.innerHTML = originalText;
+        showNotification('Payment failed. Please try again.', 'error');
     }
+}
+
+// Upgrade to premium (legacy - kept for backward compatibility)
+async function upgradeToPremium() {
+    showUpgradePaymentFlow();
 }
 
 // Display company details in modal
 function displayCompanyModal(company) {
     const companyDetails = document.getElementById('companyDetails');
+    const isLocked = Boolean(company.premiumLocked);
+    const upgradeMessage = company.upgradeMessage || 'Upgrade to Premium to unlock full company details, features, and benefits.';
     
     companyDetails.innerHTML = `
         <div class="company-header">
@@ -836,16 +1082,29 @@ function displayCompanyModal(company) {
                 ${company.name.substring(0, 2).toUpperCase()}
             </div>
             <div class="company-header-info">
-                <h2>${company.name}</h2>
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <h2 style="margin: 0;">${company.name}</h2>
+                    ${isLocked ? '<span class="plan-badge popular" style="background: linear-gradient(135deg, #f59e0b, #f97316);">Premium Locked</span>' : ''}
+                </div>
                 <p class="company-meta">
                     ${company.industry} • ${company.size} employees • ${company.location}
                 </p>
                 ${company.founded ? `<p class="company-founded">Founded: ${company.founded}</p>` : ''}
             </div>
         </div>
-        
+
+        ${isLocked ? `
+        <div class="company-section" style="border: 1px solid rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.08);">
+            <h3><span class="section-icon">🔒</span> Premium Company Insights Locked</h3>
+            <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">${upgradeMessage}</p>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="handleUpgrade()">Upgrade to Premium</button>
+                <button class="btn btn-secondary" onclick="closeModal('company')">Maybe Later</button>
+            </div>
+        </div>
+        ` : `
         <div class="company-description">
-            <p>${company.description}</p>
+            <p>${company.description || 'No description available.'}</p>
         </div>
         
         ${company.features && company.features.length > 0 ? `
@@ -861,6 +1120,7 @@ function displayCompanyModal(company) {
                 </div>
             </div>
         ` : ''}
+        `}
         
         ${company.jobs && company.jobs.length > 0 ? `
             <div class="company-section">
@@ -906,9 +1166,10 @@ function displayCompanyModal(company) {
             <button class="btn btn-secondary" onclick="closeModal('company')">
                 Close
             </button>
-            <button class="btn btn-primary" onclick="openModal('upload')">
+            <button class="btn btn-primary" onclick="openResumeUploadModal({ closeModalId: 'company', title: 'AI-Powered Resume Analysis' })">
                 Upload Resume for ${company.name}
             </button>
+            ${isLocked ? '<button class="btn btn-primary" onclick="handleUpgrade()">Unlock Full Details</button>' : ''}
         </div>
     `;
     
@@ -927,16 +1188,10 @@ function applyForJob(companyName, jobTitle, jobIndex) {
     }));
     
     // Open upload modal
-    setTimeout(() => {
-        openModal('upload');
-        
-        // Update upload modal title
-        const uploadModal = document.getElementById('uploadModal');
-        const modalTitle = uploadModal.querySelector('h2');
-        if (modalTitle) {
-            modalTitle.textContent = `Apply for ${jobTitle} at ${companyName}`;
-        }
-    }, 300);
+    openResumeUploadModal({
+        closeModalId: 'company',
+        title: `Apply for ${jobTitle} at ${companyName}`
+    });
 }
 
 if (searchBtn && searchInput) {
@@ -1501,6 +1756,12 @@ function initializeResumeUpload() {
 }
 
 function handleFileSelect(file, fileInput, analyzeBtn, fileNameDisplay) {
+    // Check if user is authenticated
+    if (!currentUser) {
+        showNotification('Please log in to upload and analyze resumes.', 'warning');
+        return;
+    }
+    
     // Validate file type - accept PDF and image formats
     const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
     const fileName = file.name.toLowerCase();
@@ -1558,6 +1819,12 @@ async function searchCompaniesForAnalysis(query) {
 }
 
 async function analyzeResume() {
+    // Check if user is authenticated
+    if (!currentUser) {
+        showNotification('Please log in to analyze resumes.', 'warning');
+        return;
+    }
+    
     if (!uploadedResume) {
         showNotification('Please select a resume file first.', 'warning');
         return;
@@ -1567,18 +1834,12 @@ async function analyzeResume() {
         // Show loading modal
         openModal('analysis');
         const analysisResults = document.getElementById('analysisResults');
-        analysisResults.innerHTML = `
-            <div class="analysis-loading">
-                <div class="loader"></div>
-                <p><svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 8px; vertical-align: middle;"><rect x="4" y="8" width="16" height="12" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="13" r="1" fill="currentColor"/><circle cx="15" cy="13" r="1" fill="currentColor"/><path d="M9 17h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 4v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>AI is analyzing your resume...</p>
-                <p class="loading-subtext">This may take up to 30 seconds</p>
-                <p id="progressStatus" style="margin-top: 10px; color: #888; font-size: 14px;">Starting...</p>
-            </div>
-        `;
+        analysisResults.innerHTML = renderAnalysisLoading();
         
         const updateProgress = (message) => {
             const statusEl = document.getElementById('progressStatus');
             if (statusEl) statusEl.textContent = message;
+        
         };
         
         // Upload resume
@@ -1657,11 +1918,18 @@ async function analyzeResume() {
         }
         
         // Display results
-        displayAnalysisResults(analysisData.data);
+        renderAnalysisResults(analysisData.data);
         
-        // Fetch LinkedIn profiles for the company
+        // Fetch LinkedIn profiles for the company only for premium users
         if (analysisData.data.company) {
-            fetchCompanyEmployees(analysisData.data.company.name);
+            if (hasPremiumAccess()) {
+                fetchCompanyEmployees(analysisData.data.company.name);
+            } else {
+                renderLockedLinkedInSection(
+                    analysisData.data.company.name,
+                    'Upgrade to Premium to view LinkedIn employee insights for this company.'
+                );
+            }
         }
         
         // Close upload modal
@@ -1681,150 +1949,240 @@ async function analyzeResume() {
             stack: error.stack,
             name: error.name
         });
-        closeModal('analysis');
         
-        let errorMessage = 'Failed to analyze resume. ';
-        if (error.message.includes('Network error') || error.message.includes('Failed to fetch')) {
-            errorMessage += 'Cannot connect to server. Please make sure the server is running (node server.js).';
-        } else if (error.message.includes('timeout')) {
-            errorMessage += 'Request timed out. The AI analysis is taking longer than expected. Please try again.';
-        } else {
-            errorMessage += error.message;
+        const errorMessage = error.message || 'Unable to analyze resume at this time.';
+        const analysisResults = document.getElementById('analysisResults');
+        if (analysisResults) {
+            analysisResults.innerHTML = renderAnalysisError(errorMessage);
         }
         
         showNotification(errorMessage, 'error');
     }
 }
 
-function displayAnalysisResults(data) {
-    const { company, analysis, atsAnalysis } = data;
-    
-    const html = `
-        <div class="analysis-header">
-            <h2>Resume Analysis Results</h2>
-            ${company ? `<div class="company-badge">Tailored for ${company.name}</div>` : ''}
-        </div>
-        
-        <div class="score-display">
-            <div>
-                <div class="score-circle">
-                    <svg width="150" height="150">
-                        <circle cx="75" cy="75" r="65" stroke="rgba(255,255,255,0.1)" stroke-width="10" fill="none"/>
-                        <circle cx="75" cy="75" r="65" stroke="url(#gradient)" stroke-width="10" fill="none"
-                            stroke-dasharray="${2 * Math.PI * 65}" 
-                            stroke-dashoffset="${2 * Math.PI * 65 * (1 - analysis.overallScore / 100)}"
-                            transform="rotate(-90 75 75)"/>
-                        <defs>
-                            <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" style="stop-color:#00d9ff;stop-opacity:1" />
-                                <stop offset="100%" style="stop-color:#7000ff;stop-opacity:1" />
-                            </linearGradient>
-                        </defs>
-                    </svg>
-                    <div class="score-value">${analysis.overallScore}</div>
-                </div>
-                <div class="score-label">Overall Score</div>
-            </div>
-            
-            ${atsAnalysis ? `
-            <div>
-                <div class="score-circle">
-                    <svg width="150" height="150">
-                        <circle cx="75" cy="75" r="65" stroke="rgba(255,255,255,0.1)" stroke-width="10" fill="none"/>
-                        <circle cx="75" cy="75" r="65" stroke="#4caf50" stroke-width="10" fill="none"
-                            stroke-dasharray="${2 * Math.PI * 65}" 
-                            stroke-dashoffset="${2 * Math.PI * 65 * (1 - atsAnalysis.atsScore / 100)}"
-                            transform="rotate(-90 75 75)"/>
-                    </svg>
-                    <div class="score-value">${atsAnalysis.atsScore}</div>
-                </div>
-                <div class="score-label">ATS Score</div>
-            </div>
-            ` : ''}
-        </div>
-        
-        ${analysis.strengths && analysis.strengths.length > 0 ? `
-        <div class="analysis-section">
-            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M6 9h12M6 15h12M10 3L8 21M16 3l-2 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span> Your Strengths</h3>
-            <div class="strengths-list">
-                ${analysis.strengths.map(strength => `
-                    <div class="strength-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align: middle; margin-right: 6px;"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#00ff88"/></svg>${strength}</div>
-                `).join('')}
-            </div>
-        </div>
-        ` : ''}
-        
-        ${analysis.improvements && analysis.improvements.length > 0 ? `
-        <div class="analysis-section">
-            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="6" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="2" fill="#00d9ff"/></svg></span> Improvements Needed</h3>
-            ${analysis.improvements.map(item => `
-                <div class="improvement-item ${item.priority}-priority">
-                    <div class="improvement-header">
-                        <div class="improvement-category">${item.category}</div>
-                        <div class="priority-badge ${item.priority}">${item.priority} Priority</div>
-                    </div>
-                    <div class="improvement-issue"><strong>Issue:</strong> ${item.issue}</div>
-                    <div class="improvement-suggestion"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 6px; vertical-align: middle;"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 16v-4M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>${item.suggestion}</div>
-                </div>
-            `).join('')}
-        </div>
-        ` : ''}
-        
-        ${analysis.companySpecific && analysis.companySpecific.length > 0 ? `
-        <div class="analysis-section">
-            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="6" stroke="#00d9ff" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="2" fill="#00d9ff"/></svg></span> ${company ? company.name + ' Specific' : 'Company-Specific'} Suggestions</h3>
-            ${analysis.companySpecific.map(item => `
-                <div class="company-specific-item">
-                    <div class="company-specific-point">→ ${item.point}</div>
-                    <div class="company-specific-reason">${item.reason}</div>
-                </div>
-            `).join('')}
-        </div>
-        ` : ''}
-        
-        ${analysis.keywordSuggestions && analysis.keywordSuggestions.length > 0 ? `
-        <div class="analysis-section">
-            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><circle cx="8" cy="15" r="4" stroke="currentColor" stroke-width="2"/><path d="M12 15h10M18 12v6M21 13v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span> Keywords to Add</h3>
-            <div class="keywords-container">
-                ${analysis.keywordSuggestions.map(keyword => `
-                    <div class="keyword-tag">${keyword}</div>
-                `).join('')}
-            </div>
-        </div>
-        ` : ''}
-        
-        ${analysis.formattingTips && analysis.formattingTips.length > 0 ? `
-        <div class="analysis-section">
-            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2L14 10L22 12L14 14L12 22L10 14L2 12L10 10L12 2Z" fill="#00d9ff"/></svg></span> Formatting Tips</h3>
-            <ul style="list-style: none; padding: 0;">
-                ${analysis.formattingTips.map(tip => `
-                    <li style="padding: 8px 0; color: var(--text-secondary);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="display: inline-block; margin-right: 6px; vertical-align: middle;"><path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/></svg>${tip}</li>
-                `).join('')}
-            </ul>
-        </div>
-        ` : ''}
-        
-        ${analysis.summaryRecommendation ? `
-        <div class="analysis-section">
-            <h3><span class="section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="display: inline-block; vertical-align: middle;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Summary</h3>
-            <div class="summary-box">
-                ${analysis.summaryRecommendation}
-            </div>
-        </div>
-        ` : ''}
-        
-        <!-- LinkedIn Employees Section (will be populated dynamically) -->
-        <div id="linkedinEmployeesSection"></div>
-        
-        <div style="text-align: center; margin-top: 3rem; margin-bottom: 2rem; padding: 2rem 0; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-            <button class="btn btn-primary" onclick="closeModal('analysis'); openModal('upload')" style="min-width: 250px; font-size: 1.1rem;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin-right: 8px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Analyze Another Resume
-            </button>
+function escapeHtml(input) {
+    const text = String(input || '');
+    return text.replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function renderAnalysisLoading() {
+    return `
+        <div class="analysis-loading">
+            <div class="loader"></div>
+            <p>AI is analyzing your resume...</p>
+            <p class="loading-subtext">This may take up to 30 seconds</p>
+            <p id="progressStatus" class="loading-subtext">Starting...</p>
         </div>
     `;
-    
+}
+
+function renderAnalysisError(message) {
+    return `
+        <div class="analysis-error-state">
+            <strong>Analysis failed</strong>
+            <p>${escapeHtml(message)}</p>
+        </div>
+    `;
+}
+
+function formatList(items, emptyText) {
+    const listItems = Array.isArray(items) ? items : [];
+    if (!listItems.length) {
+        return `<p class="analysis-empty-state">${escapeHtml(emptyText)}</p>`;
+    }
+    return `
+        <ul class="analysis-list">
+            ${listItems.map(item => `<li>${escapeHtml(typeof item === 'string' ? item : (item.issue || item.suggestion || JSON.stringify(item)))}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderPillList(items) {
+    const listItems = Array.isArray(items) ? items : [];
+    if (!listItems.length) return '';
+    return `
+        <div class="analysis-pill-list">
+            ${listItems.map(item => `<span class="analysis-pill">${escapeHtml(item)}</span>`).join('')}
+        </div>
+    `;
+}
+
+function renderScoreCard(title, score, subtitle) {
+    return `
+        <div class="analysis-card score-card">
+            <div class="card-heading"><h3>${escapeHtml(title)}</h3></div>
+            <div class="score-visual">
+                <div class="score-circle-small">
+                    <div class="score-value-small">${Math.round(score || 0)}</div>
+                </div>
+                <div>
+                    <div class="score-meta">${escapeHtml(subtitle)}</div>
+                    <div class="ats-score-bar"><div class="ats-score-fill" style="width:${Math.round(score || 0)}%"></div></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderSectionCard(title, content, icon = '') {
+    return `
+        <div class="analysis-card">
+            <div class="card-heading"><h3>${icon}${escapeHtml(title)}</h3></div>
+            ${content}
+        </div>
+    `;
+}
+
+function renderSectionDetail(title, rows) {
+    if (!rows || !rows.length) {
+        return `<p class="analysis-empty-state">No details available.</p>`;
+    }
+
+    return rows.map(row => `
+        <div class="detail-row">
+            <span class="detail-label">${escapeHtml(row.label)}</span>
+            <span class="detail-value">${escapeHtml(row.value)}</span>
+        </div>
+    `).join('');
+}
+
+function renderAnalysisResults(data) {
+    const { company, analysis, atsAnalysis } = data;
+    const result = analysis || {};
+    const sections = result.sections || {};
+    const atsSection = sections.ats || {
+        score: atsAnalysis?.atsScore ?? 0,
+        currentIssues: [],
+        suggestedImprovements: []
+    };
+    const overallScore = Math.round(result.overallScore || 0);
+    const summaryText = result.summaryRecommendation || 'Here is your resume evaluation. Use the section cards below to review issues and improvements.';
+
+    const headerSection = sections.header || {};
+    const skillsSection = sections.skills || {};
+    const experienceSection = sections.experience || {};
+    const educationSection = sections.education || {};
+    const formattingSection = sections.formatting || {};
+
+    const skillGroups = [];
+    if (skillsSection.technicalSkills) {
+        Object.entries(skillsSection.technicalSkills).forEach(([group, items]) => {
+            if (items && items.length) {
+                skillGroups.push(`<div><strong>${escapeHtml(group)}</strong>${renderPillList(items)}</div>`);
+            }
+        });
+    }
+    if (skillsSection.toolsAndTechnologies) {
+        Object.entries(skillsSection.toolsAndTechnologies).forEach(([group, items]) => {
+            if (items && items.length) {
+                skillGroups.push(`<div><strong>${escapeHtml(group)}</strong>${renderPillList(items)}</div>`);
+            }
+        });
+    }
+
+    const html = `
+        <div class="analysis-dashboard">
+            <div class="analysis-header">
+                <h2>Resume Analysis Results</h2>
+                ${company ? `<div class="company-badge">Tailored for ${escapeHtml(company.name)}</div>` : ''}
+            </div>
+
+            <div class="analysis-top-grid">
+                ${renderScoreCard('ATS Score', atsSection.score, 'Match against applicant tracking systems')}
+                ${renderScoreCard('Overall Resume Score', overallScore, 'Match based on skills, structure, and content quality')}
+            </div>
+
+            <div class="analysis-summary-card">
+                <h3>Recommendation</h3>
+                <p>${escapeHtml(summaryText)}</p>
+            </div>
+
+            <div class="analysis-comparison-grid">
+                ${renderSectionCard('Current Resume Issues', formatList(result.currentIssues, 'No current issues detected.'))}
+                ${renderSectionCard('Suggested Improvements', formatList(result.suggestedImprovements, 'No suggested improvements at this time.'))}
+            </div>
+
+            <div class="analysis-detail-grid">
+                ${renderSectionCard('Header Suggestions', `
+                    ${formatList(headerSection.currentIssues, 'Header looks clean.')}
+                    ${formatList(headerSection.suggestedImprovements, 'No header suggestions. If your title or summary is missing, add it here.')}
+                `, '<span class="section-icon">🧾</span>')}
+
+                ${renderSectionCard('Skills Analysis', `
+                    ${skillGroups.length ? skillGroups.join('') : '<p class="analysis-empty-state">No technical skills were detected in the structured analysis.</p>'}
+                    ${skillsSection.missingRelevantSkills && skillsSection.missingRelevantSkills.length ? `<div class="section-subtitle">Skills to add</div>${renderPillList(skillsSection.missingRelevantSkills)}` : ''}
+                    ${formatList(skillsSection.currentIssues, 'No skill issues detected.')}
+                `, '<span class="section-icon">💡</span>')}
+
+                ${renderSectionCard('Experience Analysis', `
+                    ${renderSectionDetail('Experience details', [
+                        { label: 'Bullet points', value: experienceSection.bulletPointCount ?? 0 },
+                        { label: 'Metrics detected', value: experienceSection.metricsDetected ? 'Yes' : 'No' },
+                        { label: 'Outdated tech', value: (experienceSection.outdatedTechnologies || []).join(', ') || 'None' }
+                    ])}
+                    ${formatList(experienceSection.currentIssues, 'No experience issues detected.')}
+                    ${formatList(experienceSection.suggestedImprovements, 'No experience suggestions.')}
+                `, '<span class="section-icon">🛠️</span>')}
+
+                ${renderSectionCard('Education Suggestions', `
+                    ${renderSectionDetail('Education details', [
+                        { label: 'Degree', value: educationSection.degree || 'Not detected' },
+                        { label: 'Institution', value: educationSection.institution || 'Not detected' },
+                        { label: 'CGPA', value: educationSection.cgpa || 'Not listed' }
+                    ])}
+                    ${educationSection.certificationsSuggested && educationSection.certificationsSuggested.length ? `<div class="section-subtitle">Recommended certifications</div>${renderPillList(educationSection.certificationsSuggested)}` : ''}
+                    ${formatList(educationSection.currentIssues, 'No education issues detected.')}
+                `, '<span class="section-icon">🎓</span>')}
+
+                ${renderSectionCard('Formatting Feedback', `
+                    ${renderSectionDetail('Formatting checks', [
+                        { label: 'Structured sections', value: formattingSection.checks?.hasStructure ? 'Yes' : 'No' },
+                        { label: 'Bullet usage', value: formattingSection.checks?.hasBulletPoints ? 'Yes' : 'No' },
+                        { label: 'Word count', value: formattingSection.checks?.wordCount ?? 0 },
+                        { label: 'Line count', value: formattingSection.checks?.lineCount ?? 0 }
+                    ])}
+                    ${formatList(formattingSection.currentIssues, 'No formatting issues detected.')}
+                    ${formatList(formattingSection.suggestedImprovements, 'No formatting suggestions.')}
+                `, '<span class="section-icon">🧩</span>')}
+
+                ${renderSectionCard('ATS Compatibility', `
+                    <div class="section-subtitle">ATS fit score</div>
+                    <div class="ats-score-bar"><div class="ats-score-fill" style="width:${Math.round(atsSection.score || 0)}%"></div></div>
+                    <p class="score-meta">${Math.round(atsSection.score || 0)}/100</p>
+                    ${formatList(atsSection.currentIssues, 'No ATS issues detected.')}
+                    ${formatList(atsSection.suggestedImprovements, 'No ATS recommendations.')}
+                `, '<span class="section-icon">✅</span>')}
+            </div>
+        </div>
+    `;
+
     document.getElementById('analysisResults').innerHTML = html;
+}
+
+function renderLockedLinkedInSection(companyName, message) {
+    const employeesSection = document.getElementById('linkedinEmployeesSection');
+
+    if (!employeesSection) {
+        return;
+    }
+
+    employeesSection.innerHTML = `
+        <div class="analysis-section linkedin-connect-section" style="border: 1px solid rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.08);">
+            <h3><span class="section-icon">🔒</span> Connect with ${companyName} Employees</h3>
+            <div class="linkedin-prompt">
+                <div class="linkedin-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="#f59e0b" stroke-width="2"/><path d="M8 11v6M8 8.5v.01M12 13v4M16 11v6M12 11a3 3 0 013-3" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <p><strong>${message}</strong></p>
+                <p>Premium members can see employee profiles and networking suggestions for ${companyName}.</p>
+                <button class="btn btn-primary" onclick="handleUpgrade()">Upgrade to Premium</button>
+            </div>
+        </div>
+    `;
 }
 
 // Fetch and display LinkedIn profiles of company employees
@@ -1848,6 +2206,16 @@ async function fetchCompanyEmployees(companyName) {
         });
         
         const data = await response.json();
+
+        if (response.status === 401 && data.requiresAuthentication) {
+            renderLockedLinkedInSection(companyName, data.error || 'Please sign in to view LinkedIn employee insights.');
+            return;
+        }
+
+        if (response.status === 403 && data.requiresSubscription) {
+            renderLockedLinkedInSection(companyName, data.message || 'Upgrade to Premium to view LinkedIn employee insights.');
+            return;
+        }
         
         if (data.linkedinNotConnected) {
             // User hasn't connected LinkedIn

@@ -6,16 +6,171 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/careercraf
 // Popular companies data
 const companies = [
   // Tech Giants
-  { name: 'Google', slug: 'google', domain: 'google.com', industry: 'Technology', size: '100,000+', location: 'Mountain View, CA', description: 'Search engine and cloud computing giant' },
-  { name: 'Amazon', slug: 'amazon', domain: 'amazon.com', industry: 'E-commerce/Technology', size: '1,500,000+', location: 'Seattle, WA', description: 'E-commerce and cloud computing leader' },
-  { name: 'Microsoft', slug: 'microsoft', domain: 'microsoft.com', industry: 'Technology', size: '200,000+', location: 'Redmond, WA', description: 'Software and cloud services company' },
-  { name: 'Apple', slug: 'apple', domain: 'apple.com', industry: 'Technology', size: '150,000+', location: 'Cupertino, CA', description: 'Consumer electronics and software' },
-  { name: 'Meta', slug: 'meta', domain: 'meta.com', industry: 'Technology', size: '80,000+', location: 'Menlo Park, CA', description: 'Social media and technology' },
-  { name: 'Netflix', slug: 'netflix', domain: 'netflix.com', industry: 'Entertainment/Technology', size: '12,000+', location: 'Los Gatos, CA', description: 'Streaming entertainment service' },
-  { name: 'Tesla', slug: 'tesla', domain: 'tesla.com', industry: 'Automotive/Technology', size: '100,000+', location: 'Austin, TX', description: 'Electric vehicles and clean energy' },
-  { name: 'Adobe', slug: 'adobe', domain: 'adobe.com', industry: 'Technology', size: '25,000+', location: 'San Jose, CA', description: 'Creative software solutions' },
-  { name: 'Salesforce', slug: 'salesforce', domain: 'salesforce.com', industry: 'Technology', size: '70,000+', location: 'San Francisco, CA', description: 'CRM and cloud computing' },
-  { name: 'Oracle', slug: 'oracle', domain: 'oracle.com', industry: 'Technology', size: '130,000+', location: 'Austin, TX', description: 'Database and cloud solutions' },
+  {
+    name: 'Google',
+    slug: 'google',
+    domain: 'google.com',
+    industry: 'Technology',
+    size: '100,000+',
+    location: 'Mountain View, CA',
+    description: 'Search engine and cloud computing giant',
+    jobs: [
+      {
+        title: 'Software Engineer',
+        department: 'Engineering',
+        location: 'Mountain View, CA',
+        type: 'Full-time',
+        experience: 'Entry',
+        salary: '$120,000 - $160,000',
+        description: 'Work on scalable systems and products.',
+        requirements: ['B.Tech in CS', 'Strong coding skills'],
+        postedDate: new Date()
+      },
+      {
+        title: 'Product Manager',
+        department: 'Product',
+        location: 'Mountain View, CA',
+        type: 'Full-time',
+        experience: 'Mid',
+        salary: '$130,000 - $180,000',
+        description: 'Drive product vision and execution.',
+        requirements: ['Experience in product management'],
+        postedDate: new Date()
+      }
+    ]
+  },
+  {
+    name: 'Amazon',
+    slug: 'amazon',
+    domain: 'amazon.com',
+    industry: 'E-commerce/Technology',
+    size: '1,500,000+',
+    location: 'Seattle, WA',
+    description: 'E-commerce and cloud computing leader',
+    jobs: [
+      {
+        title: 'Data Analyst',
+        department: 'Analytics',
+        location: 'Seattle, WA',
+        type: 'Full-time',
+        experience: 'Entry',
+        salary: '$90,000 - $120,000',
+        description: 'Analyze business data and trends.',
+        requirements: ['Bachelors in Statistics', 'SQL, Python'],
+        postedDate: new Date()
+      },
+      {
+        title: 'Operations Manager',
+        department: 'Operations',
+        location: 'Seattle, WA',
+        type: 'Full-time',
+        experience: 'Mid',
+        salary: '$110,000 - $150,000',
+        description: 'Manage warehouse and logistics operations.',
+        requirements: ['Experience in operations management'],
+        postedDate: new Date()
+      }
+    ]
+  },
+  {
+    name: 'Microsoft',
+    slug: 'microsoft',
+    domain: 'microsoft.com',
+    industry: 'Technology',
+    size: '200,000+',
+    location: 'Redmond, WA',
+    description: 'Software and cloud services company',
+    jobs: [
+      {
+        title: 'Cloud Solutions Architect',
+        department: 'Cloud',
+        location: 'Redmond, WA',
+        type: 'Full-time',
+        experience: 'Senior',
+        salary: '$150,000 - $200,000',
+        description: 'Design and implement cloud solutions.',
+        requirements: ['Cloud certifications', '5+ years experience'],
+        postedDate: new Date()
+      },
+      {
+        title: 'UX Designer',
+        department: 'Design',
+        location: 'Redmond, WA',
+        type: 'Full-time',
+        experience: 'Mid',
+        salary: '$100,000 - $140,000',
+        description: 'Design user experiences for Microsoft products.',
+        requirements: ['Portfolio', 'Experience with Figma/Sketch'],
+        postedDate: new Date()
+      }
+    ]
+  },
+  {
+    name: 'Apple',
+    slug: 'apple',
+    domain: 'apple.com',
+    industry: 'Technology',
+    size: '150,000+',
+    location: 'Cupertino, CA',
+    description: 'Consumer electronics and software',
+    jobs: [
+      {
+        title: 'Hardware Engineer',
+        department: 'Hardware',
+        location: 'Cupertino, CA',
+        type: 'Full-time',
+        experience: 'Entry',
+        salary: '$110,000 - $150,000',
+        description: 'Develop and test Apple hardware products.',
+        requirements: ['B.Tech in Electronics', 'Circuit design'],
+        postedDate: new Date()
+      },
+      {
+        title: 'iOS Developer',
+        department: 'Software',
+        location: 'Cupertino, CA',
+        type: 'Full-time',
+        experience: 'Mid',
+        salary: '$120,000 - $160,000',
+        description: 'Build and maintain iOS applications.',
+        requirements: ['Swift', 'iOS SDK'],
+        postedDate: new Date()
+      }
+    ]
+  },
+  {
+    name: 'Meta',
+    slug: 'meta',
+    domain: 'meta.com',
+    industry: 'Technology',
+    size: '80,000+',
+    location: 'Menlo Park, CA',
+    description: 'Social media and technology',
+    jobs: [
+      {
+        title: 'Machine Learning Engineer',
+        department: 'AI',
+        location: 'Menlo Park, CA',
+        type: 'Full-time',
+        experience: 'Senior',
+        salary: '$160,000 - $220,000',
+        description: 'Develop ML models for Meta products.',
+        requirements: ['Deep learning', 'Python, PyTorch'],
+        postedDate: new Date()
+      },
+      {
+        title: 'Content Strategist',
+        department: 'Content',
+        location: 'Menlo Park, CA',
+        type: 'Full-time',
+        experience: 'Mid',
+        salary: '$90,000 - $120,000',
+        description: 'Plan and manage content for social platforms.',
+        requirements: ['Content planning', 'Social media experience'],
+        postedDate: new Date()
+      }
+    ]
+  },
   
   // Tech Companies
   { name: 'IBM', slug: 'ibm', domain: 'ibm.com', industry: 'Technology', size: '280,000+', location: 'Armonk, NY', description: 'Enterprise technology and consulting' },

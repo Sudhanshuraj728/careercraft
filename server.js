@@ -25,6 +25,13 @@ const Company = require('./models/Company');
 const Subscription = require('./models/Subscription');
 const Contact = require('./models/Contact');
 const resumeAnalyzer = require('./services/resumeAnalyzer');
+const {
+  buildSubscriptionPayload,
+  getOrCreateSubscription,
+  requirePremium,
+  requireAuth,
+  requireAdmin
+} = require('./middleware/accessControl');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -81,12 +88,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Session middleware
+app.set('trust proxy', 1);
 app.use(session({
   secret: process.env.SESSION_SECRET || 'change-this-secret-in-production',
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: MONGO_URI }),
   cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
   }
 }));
@@ -223,16 +234,26 @@ app.post('/api/auth/logout', (req, res) => {
 
 // GET /api/auth/user - Get current authenticated user
 app.get('/api/auth/user', isAuthenticated, (req, res) => {
-  res.json({
-    success: true,
-    user: {
-      id: req.user._id,
-      name: req.user.name,
-      email: req.user.email,
-      avatar: req.user.avatar,
-      linkedinProfile: req.user.linkedinProfile || null,
-      linkedinId: req.user.linkedinId || null
-    }
+  (async () => {
+    const subscription = await getOrCreateSubscription(req.user._id);
+    const subscriptionStatus = buildSubscriptionPayload(subscription);
+
+    res.json({
+      success: true,
+      user: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        avatar: req.user.avatar,
+        linkedinProfile: req.user.linkedinProfile || null,
+        linkedinId: req.user.linkedinId || null,
+        subscriptionPlan: subscriptionStatus.plan,
+        isPremium: subscriptionStatus.isPremium
+      }
+    });
+  })().catch((error) => {
+    console.error('Auth user lookup error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch user details' });
   });
 });
 
@@ -282,10 +303,12 @@ app.post('/api/contact', apiLimiter, asyncHandler(async (req, res) => {
 }));
 
 // GET /api/admin/contacts - Get all contact messages (admin only)
-app.get('/api/admin/contacts', asyncHandler(async (req, res) => {
+app.get('/api/admin/contacts', requireAdmin, asyncHandler(async (req, res) => {
   const contacts = await Contact.find()
     .sort({ createdAt: -1 })
     .limit(100);
+  
+  logger.info(`Admin accessed contacts: ${req.user.email}`);
   
   res.json({
     success: true,
@@ -506,45 +529,49 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// --- Admin Endpoints ---
-// GET /api/admin/users - Get all users for admin dashboard
-app.get('/api/admin/users', async (req, res) => {
+// --- Admin Endpoints (PROTECTED) ---
+// GET /api/admin/users - Get all users for admin dashboard (ADMIN ONLY)
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
   try {
     const users = await User.find({})
       .select('-password')
       .sort({ createdAt: -1 })
       .lean();
     
+    logger.info(`Admin accessed users list: ${req.user.email}`);
+    
     res.json({
       success: true,
       users: users
     });
   } catch (error) {
-    console.error('Admin users error:', error);
+    logger.error('Admin users error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch users' });
   }
 });
 
-// GET /api/admin/companies - Get all companies for admin dashboard
-app.get('/api/admin/companies', async (req, res) => {
+// GET /api/admin/companies - Get all companies for admin dashboard (ADMIN ONLY)
+app.get('/api/admin/companies', requireAdmin, async (req, res) => {
   try {
     const companies = await Company.find({})
       .select('name slug industry location size logo')
       .sort({ name: 1 })
       .lean();
     
+    logger.info(`Admin accessed companies list: ${req.user.email}`);
+    
     res.json({
       success: true,
       companies: companies
     });
   } catch (error) {
-    console.error('Admin companies error:', error);
+    logger.error('Admin companies error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch companies' });
   }
 });
 
-// GET /api/admin/report - Generate admin report
-app.get('/api/admin/report', asyncHandler(async (req, res) => {
+// GET /api/admin/report - Generate admin report (ADMIN ONLY)
+app.get('/api/admin/report', requireAdmin, asyncHandler(async (req, res) => {
   const users = await User.find({}).select('-password').lean();
   const companies = await Company.find({}).lean();
   const contacts = await Contact.find({}).lean();
@@ -582,11 +609,12 @@ app.get('/api/admin/report', asyncHandler(async (req, res) => {
     }))
   };
 
+  logger.info(`Admin generated report: ${req.user.email}`);
   res.json({ success: true, report });
 }));
 
-// GET /api/admin/export - Export all data
-app.get('/api/admin/export', asyncHandler(async (req, res) => {
+// GET /api/admin/export - Export all data (ADMIN ONLY)
+app.get('/api/admin/export', requireAdmin, asyncHandler(async (req, res) => {
   const { type } = req.query; // 'users', 'companies', 'contacts', or 'all'
   
   let data = {};
@@ -604,13 +632,14 @@ app.get('/api/admin/export', asyncHandler(async (req, res) => {
     data.subscriptions = await Subscription.find({}).lean();
   }
 
+  logger.info(`Admin exported data (${type}): ${req.user.email}`);
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename=careercraft-export-${Date.now()}.json`);
   res.json({ success: true, exportedAt: new Date().toISOString(), data });
 }));
 
-// GET /api/admin/logs - Get recent system logs
-app.get('/api/admin/logs', asyncHandler(async (req, res) => {
+// GET /api/admin/logs - Get recent system logs (ADMIN ONLY)
+app.get('/api/admin/logs', requireAdmin, asyncHandler(async (req, res) => {
   const logsPath = path.join(__dirname, 'logs', 'app.log');
   
   if (!fs.existsSync(logsPath)) {
@@ -633,11 +662,12 @@ app.get('/api/admin/logs', asyncHandler(async (req, res) => {
     }
   });
 
+  logger.info(`Admin accessed logs: ${req.user.email}`);
   res.json({ success: true, logs: logs.reverse() });
 }));
 
-// GET /api/admin/health - System health check
-app.get('/api/admin/health', asyncHandler(async (req, res) => {
+// GET /api/admin/health - System health check (ADMIN ONLY)
+app.get('/api/admin/health', requireAdmin, asyncHandler(async (req, res) => {
   const health = {
     status: 'operational',
     timestamp: new Date().toISOString(),
@@ -659,19 +689,13 @@ app.get('/api/admin/health', asyncHandler(async (req, res) => {
     }
   };
 
+  logger.info(`Admin checked health: ${req.user.email}`);
   res.json({ success: true, health });
 }));
 
 // --- LinkedIn Integration Endpoints ---
 // GET /api/linkedin/company-employees/:companyName - Get LinkedIn profiles of company employees
-app.get('/api/linkedin/company-employees/:companyName', asyncHandler(async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({
-      success: false,
-      error: 'Please sign in to view LinkedIn profiles'
-    });
-  }
-
+app.get('/api/linkedin/company-employees/:companyName', requirePremium, asyncHandler(async (req, res) => {
   const { companyName } = req.params;
   const limit = parseInt(req.query.limit) || 10;
 
@@ -804,7 +828,7 @@ app.get('/api/companies/search', async (req, res) => {
   }
 });
 
-// GET /api/companies/:slug - Get company details by slug (FREE - No subscription check)
+// GET /api/companies/:slug - Get company details by slug
 app.get('/api/companies/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
@@ -816,15 +840,39 @@ app.get('/api/companies/:slug', async (req, res) => {
       });
     }
     
-    const company = await Company.findOne({ slug }).lean();
-    
-    if (!company) {
+    const basicCompany = await Company.findOne({ slug })
+      .select('name slug industry location size logo domain jobs')
+      .lean();
+
+    if (!basicCompany) {
       return res.status(404).json({ 
         success: false,
         error: 'Company not found' 
       });
     }
-    
+
+    let accessState = { isPremium: false };
+    if (req.isAuthenticated()) {
+      const subscription = await getOrCreateSubscription(req.user._id);
+      accessState = buildSubscriptionPayload(subscription);
+    }
+
+    if (!accessState.isPremium) {
+      return res.json({
+        success: true,
+        data: {
+          ...basicCompany,
+          premiumLocked: true,
+          requiresAuthentication: !req.isAuthenticated(),
+          upgradeMessage: req.isAuthenticated()
+            ? 'Upgrade to Premium to unlock full company details, features, and benefits.'
+            : 'Sign in to unlock premium company details.'
+        }
+      });
+    }
+
+    const company = await Company.findOne({ slug }).lean();
+
     res.json({ 
       success: true,
       data: company
@@ -945,20 +993,13 @@ app.get('/api/templates/:id/download', (req, res) => {
 // GET /api/subscription/status - Get user's subscription status
 app.get('/api/subscription/status', async (req, res) => {
   try {
-    let userId = null;
-    
-    if (req.isAuthenticated()) {
-      userId = req.user._id;
-    } else {
+    if (!req.isAuthenticated()) {
       // Guest user tracking
       if (!req.session.guestId) {
         return res.json({
           success: true,
           data: {
-            plan: 'free',
-            analysesUsed: 0,
-            analysesLimit: 10,
-            remaining: 10,
+            ...buildSubscriptionPayload(null),
             isGuest: true
           }
         });
@@ -969,33 +1010,32 @@ app.get('/api/subscription/status', async (req, res) => {
         return res.json({
           success: true,
           data: {
-            plan: 'free',
-            analysesUsed: 0,
-            analysesLimit: 10,
-            remaining: 10,
+            ...buildSubscriptionPayload(null),
             isGuest: true
           }
         });
       }
-      userId = guestUser._id;
+
+      const guestSubscription = await getOrCreateSubscription(guestUser._id);
+      const guestStatus = buildSubscriptionPayload(guestSubscription);
+
+      return res.json({
+        success: true,
+        data: {
+          ...guestStatus,
+          isGuest: true
+        }
+      });
     }
     
-    let subscription = await Subscription.findOne({ userId });
-    if (!subscription) {
-      subscription = await Subscription.create({ userId });
-    }
+    const subscription = await getOrCreateSubscription(req.user._id);
+    const subscriptionStatus = buildSubscriptionPayload(subscription);
     
     res.json({
       success: true,
       data: {
-        plan: subscription.plan,
-        analysesUsed: subscription.resumeAnalysesUsed,
-        analysesLimit: subscription.freeAnalysesLimit,
-        remaining: subscription.getRemainingAnalyses(),
-        isActive: subscription.isActive,
-        isPremium: subscription.plan === 'premium',
-        premiumEndDate: subscription.premiumEndDate,
-        isGuest: !req.isAuthenticated()
+        ...subscriptionStatus,
+        isGuest: false
       }
     });
   } catch (error) {
@@ -1007,38 +1047,122 @@ app.get('/api/subscription/status', async (req, res) => {
   }
 });
 
-// POST /api/subscription/upgrade - Upgrade to premium
-app.post('/api/subscription/upgrade', async (req, res) => {
+// POST /api/subscription/upgrade - Initiate premium upgrade
+// This endpoint should receive a valid payment token from payment gateway
+app.post('/api/subscription/upgrade', requireAuth, asyncHandler(async (req, res) => {
+  const { paymentToken, paymentId } = req.body;
+  
+  // SECURITY: In production, verify paymentToken with payment gateway (Razorpay, Stripe, etc.)
+  if (!paymentToken) {
+    return res.status(400).json({
+      success: false,
+      error: 'Payment token is required',
+      code: 'PAYMENT_TOKEN_REQUIRED'
+    });
+  }
+  
+  // TODO: Verify payment token with payment gateway
+  // For now, reject all upgrade attempts (must go through UI)
+  logger.warn(`Upgrade attempt without valid payment: ${req.user.email}`);
+  
+  return res.status(403).json({
+    success: false,
+    error: 'Invalid payment token. Use the upgrade flow in the UI.',
+    code: 'INVALID_PAYMENT',
+    message: 'Please complete the upgrade process through the app.'
+  });
+}));
+
+// POST /api/subscription/initiate-upgrade - Start payment flow
+// Returns payment order details to frontend
+app.post('/api/subscription/initiate-upgrade', requireAuth, asyncHandler(async (req, res) => {
+  const subscription = await getOrCreateSubscription(req.user._id);
+  
+  // Prevent re-upgrading if already premium
+  if (subscription.plan === 'premium' && subscription.premiumEndDate && new Date() < subscription.premiumEndDate) {
+    return res.status(400).json({
+      success: false,
+      error: 'You are already a premium member',
+      message: `Premium active until ${subscription.premiumEndDate.toLocaleDateString()}`,
+      code: 'ALREADY_PREMIUM'
+    });
+  }
+  
+  // Create payment order (Razorpay/Stripe integration)
+  // For demo: return mock order
+  const orderId = `ORDER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  logger.info(`Upgrade initiated for: ${req.user.email}`);
+  
+  res.json({
+    success: true,
+    data: {
+      orderId: orderId,
+      amount: 14900, // In paise (149 INR * 100)
+      currency: 'INR',
+      description: 'CareerCraft Premium Subscription - 30 days',
+      userEmail: req.user.email,
+      userName: req.user.name,
+      planDetails: {
+        duration: '30 days',
+        features: [
+          'Unlimited company views',
+          'Full company details',
+          'LinkedIn employee insights',
+          'Unlimited resume analyses',
+          'Premium support'
+        ]
+      }
+    }
+  });
+}));
+
+// POST /api/subscription/confirm-upgrade - Confirm payment and upgrade
+// Called after payment gateway confirms successful payment
+app.post('/api/subscription/confirm-upgrade', requireAuth, asyncHandler(async (req, res) => {
+  const { paymentId, orderId, signature } = req.body;
+  
+  if (!paymentId || !orderId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Payment ID and Order ID are required',
+      code: 'MISSING_PAYMENT_INFO'
+    });
+  }
+  
+  // TODO: Verify payment signature with payment gateway
+  // For now, just verify format
+  if (!paymentId.startsWith('pay_') && !paymentId.startsWith('DEMO_')) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid payment ID format',
+      code: 'INVALID_PAYMENT_ID'
+    });
+  }
+  
   try {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        success: false,
-        error: 'Please sign in to upgrade to premium'
-      });
-    }
-    
-    const { paymentId, transactionId } = req.body;
-    
-    let subscription = await Subscription.findOne({ userId: req.user._id });
-    if (!subscription) {
-      subscription = await Subscription.create({ userId: req.user._id });
-    }
+    const subscription = await getOrCreateSubscription(req.user._id);
     
     // Update to premium (30 days)
     subscription.plan = 'premium';
     subscription.premiumStartDate = new Date();
     subscription.premiumEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     subscription.isActive = true;
+    subscription.resumeAnalysesUsed = 0; // Reset counter for premium
     
     // Add payment record
     subscription.paymentHistory.push({
       amount: 149,
       currency: 'INR',
-      transactionId: transactionId || `TXN_${Date.now()}`,
+      transactionId: paymentId,
+      orderId: orderId,
+      date: new Date(),
       status: 'success'
     });
     
     await subscription.save();
+    
+    logger.info(`User upgraded to premium: ${req.user.email}`);
     
     res.json({
       success: true,
@@ -1046,20 +1170,22 @@ app.post('/api/subscription/upgrade', async (req, res) => {
       data: {
         plan: subscription.plan,
         premiumEndDate: subscription.premiumEndDate,
-        remaining: 'Unlimited'
+        remaining: 'Unlimited',
+        message: `Premium active until ${subscription.premiumEndDate.toLocaleDateString()}`
       }
     });
   } catch (error) {
-    console.error('Upgrade error:', error);
+    logger.error('Upgrade confirmation failed:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to upgrade subscription'
+      error: 'Failed to confirm upgrade',
+      code: 'UPGRADE_CONFIRMATION_FAILED'
     });
   }
-});
+}));
 
-// POST /api/subscription/reset - Reset subscription (for migration/testing)
-app.post('/api/subscription/reset', async (req, res) => {
+// POST /api/subscription/reset - Reset subscription (for admin/testing only)
+app.post('/api/subscription/reset', requireAdmin, asyncHandler(async (req, res) => {
   try {
     // Reset ALL subscriptions to use new resumeAnalysesUsed field
     const result = await Subscription.updateMany(
@@ -1076,19 +1202,21 @@ app.post('/api/subscription/reset', async (req, res) => {
       }
     );
     
+    logger.info(`Admin reset subscriptions: ${req.user.email} - ${result.modifiedCount} updated`);
+    
     res.json({
       success: true,
       message: 'All subscriptions reset successfully',
       updated: result.modifiedCount
     });
   } catch (error) {
-    console.error('Reset error:', error);
+    logger.error('Reset error:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to reset subscriptions'
     });
   }
-});
+}));
 
 // GET /api/subscription/pricing - Get pricing information
 app.get('/api/subscription/pricing', (req, res) => {
@@ -1129,8 +1257,8 @@ app.get('/api/subscription/pricing', (req, res) => {
 
 // --- Upload Endpoints ---
 
-// POST /api/resumes/upload - Upload resume file
-app.post('/api/resumes/upload', upload.single('resume'), (req, res) => {
+// POST /api/resumes/upload - Upload resume file (Requires authentication)
+app.post('/api/resumes/upload', requireAuth, upload.single('resume'), (req, res) => {
   try {
     console.log('Upload request received');
     console.log('File:', req.file);
@@ -1196,51 +1324,29 @@ app.post('/api/resumes/upload', upload.single('resume'), (req, res) => {
   }
 });
 
-// POST /api/resumes/analyze - Analyze resume for specific company (with subscription check)
-app.post('/api/resumes/analyze', async (req, res) => {
+// POST /api/resumes/analyze - Analyze resume for specific company (Requires authentication)
+app.post('/api/resumes/analyze', requireAuth, async (req, res) => {
   try {
     const { filename, companySlug } = req.body;
     
     if (!filename) {
       return res.status(400).json({
         success: false,
-        error: 'Resume filename is required'
+        message: 'Resume filename is required'
       });
     }
     
     if (!companySlug) {
       return res.status(400).json({
         success: false,
-        error: 'Company information is required'
+        message: 'Company information is required'
       });
     }
 
-    // Get or create subscription for user/guest
-    let subscription;
-    let userId = null;
+    // Get or create subscription for authenticated user
+    const userId = req.user._id;
     
-    if (req.isAuthenticated()) {
-      userId = req.user._id;
-    } else {
-      // For guest users, use session-based tracking
-      if (!req.session.guestId) {
-        req.session.guestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      }
-      
-      // Find or create guest user
-      let guestUser = await User.findOne({ guestId: req.session.guestId });
-      if (!guestUser) {
-        guestUser = await User.create({
-          name: 'Guest User',
-          email: `${req.session.guestId}@guest.careercraft.com`,
-          guestId: req.session.guestId
-        });
-      }
-      userId = guestUser._id;
-    }
-    
-    // Get or create subscription
-    subscription = await Subscription.findOne({ userId });
+    let subscription = await Subscription.findOne({ userId });
     if (!subscription) {
       subscription = await Subscription.create({ userId });
     }
@@ -1268,7 +1374,7 @@ app.post('/api/resumes/analyze', async (req, res) => {
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
-        error: 'Resume file not found'
+        message: 'Resume file not found'
       });
     }
     
@@ -1277,7 +1383,7 @@ app.post('/api/resumes/analyze', async (req, res) => {
     if (!company) {
       return res.status(404).json({
         success: false,
-        error: 'Company not found'
+        message: 'Company not found'
       });
     }
     
@@ -1297,23 +1403,30 @@ app.post('/api/resumes/analyze', async (req, res) => {
       console.error('Text extraction failed:', extractError.message);
       return res.status(400).json({
         success: false,
-        error: 'Failed to extract text from resume. Please ensure: 1) File is a valid PDF, 2) PDF contains actual text (not just images), 3) File is not corrupted. Error: ' + extractError.message
+        message: 'Failed to extract text from resume. Please ensure the file is a valid PDF with text content. Error: ' + extractError.message
       });
     }
     
+    const { jobRole, jobDescription } = req.body;
+
     // Analyze with AI
-    console.log('Analyzing with Gemini AI...');
+    console.log('Analyzing resume for:', companySlug);
     const analysis = await resumeAnalyzer.analyzeResumeForCompany(resumeText, {
       name: company.name,
       industry: company.industry,
       features: company.features,
       jobs: company.jobs
+    }, {
+      jobRole,
+      jobDescription
     });
-    
-    // Get ATS suggestions
-    console.log('Getting ATS suggestions...');
-    const atsAnalysis = await resumeAnalyzer.generateATSSuggestions(resumeText);
-    
+
+    const atsAnalysis = analysis.sections?.ats ? {
+      atsScore: analysis.sections.ats.score,
+      currentIssues: analysis.sections.ats.currentIssues,
+      suggestedImprovements: analysis.sections.ats.suggestedImprovements
+    } : await resumeAnalyzer.generateATSSuggestions(resumeText);
+
     // Increment analysis count (only after successful analysis)
     await subscription.incrementAnalyses();
     
@@ -1339,10 +1452,11 @@ app.post('/api/resumes/analyze', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Resume analysis error:', error);
-    res.status(500).json({
+    console.error('Resume analysis error:', error.message || error);
+    const statusCode = error.code === 'INVALID_RESUME_INPUT' ? 400 : 500;
+    res.status(statusCode).json({
       success: false,
-      error: error.message || 'Failed to analyze resume. Please try again.'
+      message: error.message || 'Failed to analyze resume. Please try again.'
     });
   }
 });

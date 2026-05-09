@@ -159,14 +159,474 @@ async function extractResumeText(filePath, mimetype) {
     }
 }
 
+const TECHNICAL_SKILL_GROUPS = {
+    cloud: ['aws', 'azure', 'gcp', 'cloud', 'lambda', 'ec2', 's3', 'serverless'],
+    security: ['security', 'iam', 'oauth', 'jwt', 'encryption', 'firewall', 'ssl', 'tls', 'cissp', 'cisa'],
+    programming: ['python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'go', 'rust', 'ruby', 'php', 'swift', 'kotlin'],
+    dataAi: ['machine learning', 'deep learning', 'ai', 'data science', 'pandas', 'numpy', 'scikit-learn', 'tensorflow', 'pytorch', 'sql'],
+};
+
+const TOOL_AND_TECH_GROUPS = {
+    frameworks: ['react', 'angular', 'vue', 'node', 'express', 'django', 'flask', 'spring', 'fastapi'],
+    databases: ['mysql', 'postgresql', 'mongodb', 'redis', 'elasticsearch', 'kafka', 'rabbitmq', 'dynamodb'],
+    devops: ['git', 'jenkins', 'ci/cd', 'docker', 'kubernetes', 'terraform', 'ansible', 'github actions'],
+    testing: ['jest', 'cypress', 'selenium', 'junit', 'pytest', 'mocha'],
+};
+
+const CERTIFICATION_RECOMMENDATIONS = {
+    cloud: ['AWS Certified Solutions Architect', 'Microsoft Azure Fundamentals', 'Google Cloud Associate Cloud Engineer'],
+    security: ['CompTIA Security+', 'Certified Ethical Hacker (CEH)', 'CISSP'],
+    networking: ['CCNA', 'CompTIA Network+'],
+    devops: ['AWS Certified DevOps Engineer', 'Kubernetes Administrator (CKA)'],
+    dataAi: ['Google Data Analytics Professional Certificate', 'Microsoft Azure Data Scientist Associate'],
+    general: ['AWS Certified Cloud Practitioner', 'Microsoft Azure Fundamentals', 'CCNA'],
+};
+
+const OUTDATED_TECH_KEYWORDS = ['jquery', 'angularjs', 'flash', 'svn', 'visual basic', 'coldfusion', 'struts', 'php5'];
+
+function uniqueStrings(values = []) {
+    return [...new Set(values.filter(Boolean))];
+}
+
+function normalizeJobContext(companyData = {}, options = {}) {
+    const jobRole = options.jobRole || companyData.jobRole || null;
+    const jobDescription = options.jobDescription || companyData.jobDescription || null;
+    const jobText = [jobRole, jobDescription, companyData.name, companyData.industry]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    return {
+        companyName: companyData.name || 'Target Company',
+        companyIndustry: companyData.industry || '',
+        jobRole,
+        jobDescription,
+        jobText,
+        companyKey: (companyData.name || '').toLowerCase(),
+        relevantSkills: extractRelevantSkills(jobText)
+    };
+}
+
+function categorizeSkills(foundSkills = []) {
+    const normalizedSkills = foundSkills.map(skill => skill.toLowerCase());
+
+    const matchGroup = (groups) => Object.entries(groups).reduce((acc, [groupName, keywords]) => {
+        acc[groupName] = uniqueStrings(
+            keywords.filter(keyword => normalizedSkills.some(skill => skill.includes(keyword)))
+        );
+        return acc;
+    }, {});
+
+    return {
+        technicalSkills: matchGroup(TECHNICAL_SKILL_GROUPS),
+        toolsAndTechnologies: matchGroup(TOOL_AND_TECH_GROUPS)
+    };
+}
+
+function extractRelevantSkills(jobText = '') {
+    const normalizedJobText = jobText.toLowerCase();
+    const allSkills = uniqueStrings([
+        ...Object.values(TECHNICAL_SKILL_GROUPS).flat(),
+        ...Object.values(TOOL_AND_TECH_GROUPS).flat()
+    ]);
+
+    return allSkills.filter(skill => normalizedJobText.includes(skill));
+}
+
+function pickCertifications(jobContext, foundSkills = []) {
+    const jobText = jobContext.jobText;
+    const skillText = foundSkills.join(' ').toLowerCase();
+    const certificationBuckets = [];
+
+    if (jobText.includes('aws') || skillText.includes('aws') || jobText.includes('cloud')) certificationBuckets.push(...CERTIFICATION_RECOMMENDATIONS.cloud);
+    if (jobText.includes('azure') || skillText.includes('azure') || jobText.includes('.net')) certificationBuckets.push(...CERTIFICATION_RECOMMENDATIONS.cloud.slice(1, 2));
+    if (jobText.includes('security') || skillText.includes('security')) certificationBuckets.push(...CERTIFICATION_RECOMMENDATIONS.security);
+    if (jobText.includes('network') || jobText.includes('ccna')) certificationBuckets.push(...CERTIFICATION_RECOMMENDATIONS.networking);
+    if (jobText.includes('devops') || jobText.includes('docker') || jobText.includes('kubernetes')) certificationBuckets.push(...CERTIFICATION_RECOMMENDATIONS.devops);
+    if (jobText.includes('data') || jobText.includes('analytics') || skillText.includes('data science')) certificationBuckets.push(...CERTIFICATION_RECOMMENDATIONS.dataAi);
+
+    if (certificationBuckets.length === 0) {
+        certificationBuckets.push(...CERTIFICATION_RECOMMENDATIONS.general);
+    }
+
+    return uniqueStrings(certificationBuckets).slice(0, 4);
+}
+
+function mapCategoryToSection(category = '') {
+    const normalizedCategory = category.toLowerCase();
+
+    if (normalizedCategory.includes('technical') || normalizedCategory.includes('skill') || normalizedCategory.includes('portfolio') || normalizedCategory.includes('keyword')) {
+        return 'skills';
+    }
+    if (normalizedCategory.includes('experience') || normalizedCategory.includes('achievement') || normalizedCategory.includes('impact')) {
+        return 'experience';
+    }
+    if (normalizedCategory.includes('academic') || normalizedCategory.includes('education') || normalizedCategory.includes('certification')) {
+        return 'education';
+    }
+    if (normalizedCategory.includes('format') || normalizedCategory.includes('readability') || normalizedCategory.includes('content depth')) {
+        return 'formatting';
+    }
+    if (normalizedCategory.includes('presence') || normalizedCategory.includes('ats')) {
+        return 'ats';
+    }
+    if (normalizedCategory.includes('header')) {
+        return 'header';
+    }
+
+    return 'general';
+}
+
+function buildStructuredAnalysisPayload(payload) {
+    const {
+        jobContext,
+        foundSkills,
+        skillBuckets,
+        improvementItems,
+        hasMetrics,
+        hasStructure,
+        hasBulletPoints,
+        wordCount,
+        lineCount,
+        outdatedTechnologiesFound,
+        resumeText,
+        hasLinkedIn,
+        hasGithub,
+        hasEducation,
+        hasCGPA,
+        cgpaValue,
+        degreeName,
+        institution,
+        summaryRecommendation,
+        score,
+        keywordScore,
+        structureScore,
+        formattingScore,
+        experienceScore,
+        educationScore,
+        lengthScore,
+        atsScore
+    } = payload;
+
+    const normalizedFoundSkills = foundSkills.map(skill => skill.toLowerCase());
+    const missingRelevantSkills = extractRelevantSkills(jobContext.jobText)
+        .filter(skill => !normalizedFoundSkills.some(found => found.includes(skill.toLowerCase())));
+
+    const headerIssues = [];
+    const headerSuggestions = [];
+    if (!jobContext.jobRole) {
+        headerIssues.push('No target job title specified in the header');
+        headerSuggestions.push('Add a target job title beneath your name so recruiters immediately know what role you are aiming for.');
+    }
+
+    const skillIssues = [];
+    const skillSuggestions = [];
+    if (foundSkills.length < 8) {
+        skillIssues.push(`Limited technical coverage (${foundSkills.length} skills detected)`);
+        skillSuggestions.push(`Expand your skills with job-relevant items such as ${missingRelevantSkills.slice(0, 3).join(', ') || 'cloud, security, or role-specific tools'} if they match your experience.`);
+    }
+    if (missingRelevantSkills.length > 0) {
+        skillIssues.push(`Missing role-relevant skills: ${missingRelevantSkills.slice(0, 5).join(', ')}`);
+        skillSuggestions.push(`Add only the skills you genuinely know that match this role, especially ${missingRelevantSkills.slice(0, 4).join(', ')}.`);
+    }
+
+    const experienceIssues = [];
+    const experienceSuggestions = [];
+    if (!hasMetrics) {
+        experienceIssues.push('Experience bullets do not show measurable impact');
+        experienceSuggestions.push('Add numbers, percentages, or scale to 2-3 bullets to show impact, ownership, and outcomes.');
+    }
+    if (outdatedTechnologiesFound.length > 0) {
+        experienceIssues.push(`Potentially outdated technologies found: ${outdatedTechnologiesFound.slice(0, 4).join(', ')}`);
+        experienceSuggestions.push('If these technologies are still relevant, keep them; otherwise replace them with current tools and modern equivalents.');
+    }
+
+    const educationIssues = [];
+    const educationSuggestions = [];
+    const certifications = pickCertifications(jobContext, foundSkills);
+    if (hasEducation && !hasCGPA) {
+        educationIssues.push('Education section does not include GPA/CGPA');
+        educationSuggestions.push('Include GPA/CGPA only if it is strong and relevant.');
+    }
+    educationSuggestions.push(`Consider certifications such as ${certifications.slice(0, 3).join(', ')} to strengthen credibility for this role.`);
+
+    const formattingIssues = [];
+    const formattingSuggestions = [];
+    if (!hasStructure) {
+        formattingIssues.push('Resume sections are not clearly structured');
+        formattingSuggestions.push('Use clear headings such as Summary, Experience, Education, Projects, and Skills.');
+    }
+    if (!hasBulletPoints) {
+        formattingIssues.push('Bullet points are inconsistent or missing');
+        formattingSuggestions.push('Use consistent bullet points for responsibilities and achievements.');
+    }
+    if (wordCount < 300) {
+        formattingIssues.push(`Resume content is brief (${wordCount} words)`);
+        formattingSuggestions.push('Expand content to give ATS and recruiters enough detail without adding fluff.');
+    }
+    if (lineCount > 0 && lineCount < 20) {
+        formattingIssues.push('Resume may be too condensed for easy scanning');
+        formattingSuggestions.push('Add spacing between sections and keep the layout visually easy to scan.');
+    }
+
+    const atsIssues = [];
+    const atsSuggestions = [];
+    if (!hasLinkedIn) {
+        atsIssues.push('LinkedIn profile is missing');
+        atsSuggestions.push('Add your LinkedIn URL so recruiters can verify your profile quickly.');
+    }
+    if (!hasGithub && jobContext.jobText.includes('engineer')) {
+        atsIssues.push('GitHub profile is missing for a technical role');
+        atsSuggestions.push('If you have relevant projects, include your GitHub URL.');
+    }
+    if (missingRelevantSkills.length > 0) {
+        atsIssues.push(`Role keywords not sufficiently represented: ${missingRelevantSkills.slice(0, 5).join(', ')}`);
+        atsSuggestions.push('Mirror the terminology used in the job description where it truthfully matches your experience.');
+    }
+
+    const structuredIssues = [
+        ...headerIssues.map(issue => ({ section: 'header', category: 'Header', issue, priority: 'medium' })),
+        ...skillIssues.map(issue => ({ section: 'skills', category: 'Skills', issue, priority: 'high' })),
+        ...experienceIssues.map(issue => ({ section: 'experience', category: 'Experience', issue, priority: 'high' })),
+        ...educationIssues.map(issue => ({ section: 'education', category: 'Education', issue, priority: 'medium' })),
+        ...formattingIssues.map(issue => ({ section: 'formatting', category: 'Formatting', issue, priority: 'medium' })),
+        ...atsIssues.map(issue => ({ section: 'ats', category: 'ATS', issue, priority: 'high' })),
+        ...improvementItems.map(item => ({
+            section: mapCategoryToSection(item.category),
+            category: item.category,
+            issue: item.issue,
+            priority: item.priority
+        }))
+    ];
+
+    const structuredSuggestions = [
+        ...headerSuggestions.map(suggestion => ({ section: 'header', category: 'Header', suggestion, priority: 'medium' })),
+        ...skillSuggestions.map(suggestion => ({ section: 'skills', category: 'Skills', suggestion, priority: 'high' })),
+        ...experienceSuggestions.map(suggestion => ({ section: 'experience', category: 'Experience', suggestion, priority: 'high' })),
+        ...educationSuggestions.map(suggestion => ({ section: 'education', category: 'Education', suggestion, priority: 'medium' })),
+        ...formattingSuggestions.map(suggestion => ({ section: 'formatting', category: 'Formatting', suggestion, priority: 'medium' })),
+        ...atsSuggestions.map(suggestion => ({ section: 'ats', category: 'ATS', suggestion, priority: 'high' })),
+        ...improvementItems.map(item => ({
+            section: mapCategoryToSection(item.category),
+            category: item.category,
+            suggestion: item.suggestion,
+            priority: item.priority
+        }))
+    ];
+
+    const sectionLookup = (sectionName) => structuredIssues.filter(item => item.section === sectionName);
+    const suggestionLookup = (sectionName) => structuredSuggestions.filter(item => item.section === sectionName);
+
+    const currentIssues = structuredIssues.map(item => item.issue);
+    const suggestedImprovements = structuredSuggestions.map(item => item.suggestion);
+
+    return {
+        currentIssues,
+        suggestedImprovements,
+        sections: {
+            header: {
+                currentIssues: sectionLookup('header'),
+                suggestedImprovements: suggestionLookup('header')
+            },
+            skills: {
+                technicalSkills: skillBuckets.technicalSkills,
+                toolsAndTechnologies: skillBuckets.toolsAndTechnologies,
+                missingRelevantSkills,
+                currentIssues: sectionLookup('skills'),
+                suggestedImprovements: suggestionLookup('skills')
+            },
+            experience: {
+                currentIssues: sectionLookup('experience'),
+                suggestedImprovements: suggestionLookup('experience'),
+                bulletPointCount: resumeText.split('\n').filter(line => /^\s*[-*•]/.test(line)).length,
+                metricsDetected: hasMetrics,
+                outdatedTechnologies: outdatedTechnologiesFound
+            },
+            education: {
+                currentIssues: sectionLookup('education'),
+                suggestedImprovements: suggestionLookup('education'),
+                certificationsSuggested: certifications,
+                degree: degreeName,
+                institution,
+                cgpa: cgpaValue !== null && !isNaN(cgpaValue) ? Number(cgpaValue.toFixed(2)) : null
+            },
+            formatting: {
+                currentIssues: sectionLookup('formatting'),
+                suggestedImprovements: suggestionLookup('formatting'),
+                checks: {
+                    hasStructure,
+                    hasBulletPoints,
+                    wordCount,
+                    lineCount
+                }
+            },
+            ats: {
+                score: atsScore,
+                currentIssues: sectionLookup('ats'),
+                suggestedImprovements: suggestionLookup('ats')
+            }
+        },
+        scoreBreakdown: {
+            keywordScore,
+            structureScore,
+            formattingScore,
+            experienceScore,
+            educationScore,
+            lengthScore,
+            atsScore
+        },
+        jobContext: {
+            role: jobContext.jobRole,
+            descriptionProvided: Boolean(jobContext.jobDescription),
+            companyName: jobContext.companyName,
+            companyIndustry: jobContext.companyIndustry,
+            relevantSkills: jobContext.relevantSkills
+        },
+        scoreExplanation: summaryRecommendation
+    };
+}
+
+function extractGeminiTextResponse(responseData) {
+    const candidate = responseData?.candidates?.[0];
+    if (!candidate) return null;
+    
+    // New format: candidate.content.parts[0].text
+    if (candidate.content && Array.isArray(candidate.content.parts)) {
+        const text = candidate.content.parts[0]?.text;
+        if (text && typeof text === 'string' && text.trim()) {
+            return text.trim();
+        }
+    }
+    
+    // Fallback for old format
+    if (typeof candidate.output === 'string' && candidate.output.trim()) {
+        return candidate.output.trim();
+    }
+    if (candidate.content && Array.isArray(candidate.content)) {
+        return candidate.content.map(part => part.text || '').join('').trim();
+    }
+    if (typeof responseData?.output === 'string') {
+        return responseData.output.trim();
+    }
+    return null;
+}
+
+function parseGeminiJsonResponse(rawText) {
+    if (!rawText || typeof rawText !== 'string') {
+        throw new Error('Gemini returned no text content');
+    }
+    const jsonStart = rawText.indexOf('{');
+    const jsonEnd = rawText.lastIndexOf('}');
+    const candidate = jsonStart >= 0 && jsonEnd > jsonStart ? rawText.slice(jsonStart, jsonEnd + 1) : rawText;
+    try {
+        return JSON.parse(candidate);
+    } catch (parseError) {
+        const cleaned = candidate
+            .replace(/\n/g, ' ')
+            .replace(/\s+/g, ' ')
+            .replace(/,(?=\s*?[}\]])/g, '')
+            .trim();
+        return JSON.parse(cleaned);
+    }
+}
+
+function isValidGeminiAnalysisPayload(payload) {
+    return payload && typeof payload === 'object' &&
+        typeof payload.overallScore === 'number' &&
+        Array.isArray(payload.currentIssues) &&
+        Array.isArray(payload.suggestedImprovements) &&
+        payload.sections && typeof payload.sections === 'object';
+}
+
+async function callGeminiForResumeAnalysis(resumeText, companyData = {}, options = {}) {
+    const trimmedResume = resumeText.slice(0, 14000);
+    const companyContext = {
+        name: companyData.name || 'Target Company',
+        industry: companyData.industry || 'Technology',
+        features: companyData.features || [],
+        jobs: companyData.jobs || []
+    };
+    const jobRole = options.jobRole || null;
+    const jobDescription = options.jobDescription || null;
+
+    const prompt = `You are a senior resume reviewer and hiring coach. Analyze the following resume text specifically for the target company and job context. Do not invent any experience or claims; base every recommendation only on the resume text, the company profile, and the optional role/job description. The output must be valid JSON only. Use original, tailored language for each company and avoid generic repeated suggestions.
+
+Resume Text:
+${trimmedResume}
+
+Company Profile:
+${JSON.stringify(companyContext, null, 2)}
+
+Job Role:
+${jobRole || 'Not provided'}
+
+Job Description:
+${jobDescription || 'Not provided'}
+
+Return a JSON object with these fields:
+- overallScore: integer between 0 and 100
+- summaryRecommendation: concise summary with company-specific suggestions
+- strengths: array of strong resume highlights
+- currentIssues: array of problems found in the resume
+- suggestedImprovements: array of clear, actionable improvements
+- companySpecific: array of { point, reason } objects tailored to this company
+- keywordSuggestions: array of 5-8 keywords relevant to the role and company
+- formattingTips: array of 4-6 practical formatting tips
+- sections: {
+    header: { currentIssues: [], suggestedImprovements: [] },
+    skills: { technicalSkills: [], toolsAndTechnologies: [], missingRelevantSkills: [], currentIssues: [], suggestedImprovements: [] },
+    experience: { bulletPointCount: integer, metricsDetected: boolean, outdatedTechnologies: [], currentIssues: [], suggestedImprovements: [] },
+    education: { degree: string|null, institution: string|null, cgpa: number|null, certificationsSuggested: [], currentIssues: [], suggestedImprovements: [] },
+    formatting: { checks: { hasStructure: boolean, hasBulletPoints: boolean, wordCount: integer, lineCount: integer }, currentIssues: [], suggestedImprovements: [] },
+    ats: { score: integer, currentIssues: [], suggestedImprovements: [] }
+ }
+
+Avoid adding any markdown, explanatory text, or additional wrapper fields. Only emit valid JSON.`;
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+    const response = await axios.post(endpoint, {
+        contents: [{
+            parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2000
+        }
+    }, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 60000
+    });
+
+    const responseText = extractGeminiTextResponse(response.data);
+    if (!responseText) {
+        throw new Error('Gemini response did not contain readable text');
+    }
+
+    const parsed = parseGeminiJsonResponse(responseText);
+    if (!isValidGeminiAnalysisPayload(parsed)) {
+        throw new Error('Gemini response did not return a valid analysis payload');
+    }
+
+    return parsed;
+}
+
 /**
  * Smart resume analyzer with realistic variations
  */
-function analyzeResumeSmartly(resumeText, companyData) {
+function analyzeResumeSmartly(resumeText, companyData = {}, options = {}) {
+    if (typeof resumeText !== 'string' || !resumeText.trim()) {
+        const error = new Error('Resume text is empty or invalid. Please upload a readable resume file.');
+        error.code = 'INVALID_RESUME_INPUT';
+        throw error;
+    }
+
     const text = resumeText.toLowerCase();
     const lines = resumeText.split('\n').filter(l => l.trim());
+    const lineCount = lines.length;
     const words = resumeText.split(/\s+/);
     const wordCount = words.length;
+    const jobContext = normalizeJobContext(companyData, options);
+    const roleRelevantSkills = extractRelevantSkills(jobContext.jobText);
     
     // Create hash from resume text for consistent but varied scoring
     const hash = resumeText.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -221,56 +681,40 @@ function analyzeResumeSmartly(resumeText, companyData) {
     
     // Formatting
     const hasActionVerbs = /developed|implemented|designed|created|built|led|managed|optimized|improved/i.test(resumeText);
-    const hasStructure = /experience|education|skills|projects/i.test(resumeText);
+    const hasStructure = /experience|education|skills|projects|summary|certifications/i.test(resumeText);
     const hasBulletPoints = /•|·|→|–|-/.test(resumeText);
     
-    // Calculate base score - more realistic scoring
-    let score = 30; // Start lower for more realistic range
-    
-    // Contact Information (max 10 points)
-    if (hasEmail && hasPhone) score += 5;
-    if (hasLinkedIn) score += 3;
-    if (hasGithub) score += 2;
-    if (hasPortfolio) score += 2;
-    
-    // Technical Skills (max 25 points)
-    if (foundSkills.length > 3) score += 5;
-    if (foundSkills.length > 6) score += 6;
-    if (foundSkills.length > 10) score += 8;
-    if (foundSkills.length > 15) score += 6;
-    
-    // Soft Skills (max 6 points)
-    if (foundSoftSkills.length > 1) score += 3;
-    if (foundSoftSkills.length > 3) score += 3;
-    
-    // Education (max 12 points)
-    if (hasEducation) score += 6;
-    if (hasCGPA && cgpaValue >= 7.0) score += 3;
-    if (hasCGPA && cgpaValue >= 8.5) score += 2;
-    if (hasHonors) score += 1;
-    
-    // Experience & Impact (max 25 points)
-    if (hasExperience) score += 8;
-    if (hasProjects) score += 6;
-    if (hasAchievements) score += 6;
-    if (hasMetrics) score += 5;
-    
-    // Formatting & Structure (max 8 points)
-    if (hasActionVerbs) score += 3;
-    if (hasStructure) score += 2;
-    if (hasBulletPoints) score += 2;
-    
-    // Content Length (max 6 points)
-    if (wordCount > 250) score += 2;
-    if (wordCount > 400) score += 2;
-    if (wordCount > 600) score += 2;
-    
-    // Add realistic variation based on resume content (consistent per resume)
-    score += variation;
-    
-    // Realistic score range: 35-88 (not too perfect)
-    score = Math.min(88, Math.max(35, score));
-    
+    const relevanceMatches = uniqueStrings(roleRelevantSkills.filter(skill => text.includes(skill))).length;
+
+    const keywordScore = Math.min(40, foundSkills.length * 2 + relevanceMatches * 2);
+    const structureScore = Math.min(30,
+        (hasStructure ? 12 : 0) +
+        (hasBulletPoints ? 10 : 0) +
+        (lineCount >= 20 ? 4 : 0) +
+        (/\bsummary\b/i.test(resumeText) ? 4 : 0)
+    );
+    const formattingScore = Math.min(15,
+        (hasActionVerbs ? 5 : 0) +
+        ((hasLinkedIn || hasGithub) ? 3 : 0) +
+        (wordCount >= 300 ? 4 : 0) +
+        (hasPortfolio ? 3 : 0)
+    );
+    const experienceScore = Math.min(25,
+        (hasExperience ? 8 : 0) +
+        (hasProjects ? 6 : 0) +
+        (hasAchievements ? 6 : 0) +
+        (hasMetrics ? 5 : 0)
+    );
+    const educationScore = Math.min(10,
+        (hasEducation ? 5 : 0) +
+        (hasCGPA ? 3 : 0) +
+        (hasHonors ? 2 : 0)
+    );
+    const lengthScore = wordCount >= 300 && wordCount <= 700 ? 5 : wordCount > 700 ? 3 : wordCount >= 250 ? 2 : 0;
+
+    const score = Math.min(100, Math.max(0, keywordScore + structureScore + formattingScore + experienceScore + educationScore + lengthScore));
+    const atsScore = Math.min(100, Math.max(0, keywordScore + structureScore + formattingScore));
+
     // Generate company-specific strengths/improvements
     const companyTech = {
         'microsoft': ['Azure', 'C#', '.NET', 'TypeScript', 'React'],
@@ -280,8 +724,14 @@ function analyzeResumeSmartly(resumeText, companyData) {
         'apple': ['Swift', 'Objective-C', 'iOS', 'macOS', 'Metal']
     };
     
-    const companyKey = companyData.name.toLowerCase();
-    const relevantTech = companyTech[companyKey] || ['cloud computing', 'modern frameworks', 'scalable systems'];
+    const companyKey = jobContext.companyKey;
+    const relevantTech = uniqueStrings([
+        ...(companyTech[companyKey] || []),
+        ...roleRelevantSkills
+    ]).length > 0 ? uniqueStrings([
+        ...(companyTech[companyKey] || []),
+        ...roleRelevantSkills
+    ]) : ['cloud computing', 'modern frameworks', 'scalable systems'];
     
     // Build strengths - specific and personalized
     const strengths = [];
@@ -468,9 +918,50 @@ function analyzeResumeSmartly(resumeText, companyData) {
     const selectedKeywords = uniqueKeywords
         .sort((a, b) => ((hash + a.charCodeAt(0)) % 100) - ((hash + b.charCodeAt(0)) % 100))
         .slice(0, 6);
-    
+
+    const skillBuckets = categorizeSkills(foundSkills);
+    const structuredPayload = buildStructuredAnalysisPayload({
+        jobContext,
+        foundSkills,
+        skillBuckets,
+        improvementItems: improvements,
+        hasMetrics,
+        hasStructure,
+        hasBulletPoints,
+        wordCount,
+        lineCount,
+        outdatedTechnologiesFound: OUTDATED_TECH_KEYWORDS.filter(keyword => text.includes(keyword)),
+        resumeText,
+        hasLinkedIn,
+        hasGithub,
+        hasEducation,
+        hasCGPA,
+        cgpaValue,
+        degreeName,
+        institution,
+        keywordScore,
+        structureScore,
+        formattingScore,
+        experienceScore,
+        educationScore,
+        lengthScore,
+        atsScore,
+        summaryRecommendation: score >= 75 ?
+            `Strong application for ${jobContext.companyName}! ${hasCGPA && cgpaValue !== null && cgpaValue >= 8.5 ? 'Your solid academic record combined with' : 'Your'} relevant experience positions you well. ${hasMetrics ? 'Keep' : 'Add more'} quantifiable metrics and ensure ${relevantTech[0]} proficiency is highlighted.` :
+            score >= 60 ?
+            `Good foundation for ${jobContext.companyName}. Priority improvements: ${!hasMetrics ? '1) Add quantifiable achievements with numbers/percentages, ' : ''}${foundSkills.length < 8 ? '2) Expand technical skills (especially ' + relevantTech.slice(0, 2).join(' and ') + '), ' : ''}${!hasProjects ? '3) Include 2-3 relevant projects.' : '3) Strengthen project descriptions with metrics.'}` :
+            score >= 45 ?
+            `Needs development for ${jobContext.companyName}. Focus on: ${!hasMetrics ? 'Adding measurable achievements, ' : ''}${foundSkills.length < 6 ? 'expanding technical skills (' + relevantTech[0] + ', ' + relevantTech[1] + '), ' : ''}${!hasProjects ? 'creating a projects section, ' : ''}and ${!hasCGPA && hasEducation ? 'including GPA/CGPA if ≥7.5' : 'quantifying your impact'}.` :
+            `Requires significant improvement. Start with: 1) Building a comprehensive skills section (target ${relevantTech.slice(0, 3).join(', ')}), 2) Adding 2-3 projects with measurable outcomes, 3) Including all contact info and ${!hasLinkedIn ? 'LinkedIn profile' : 'complete education details'}.`,
+        score
+    });
+
     return {
         overallScore: score,
+        currentIssues: structuredPayload.currentIssues,
+        suggestedImprovements: structuredPayload.suggestedImprovements,
+        sections: structuredPayload.sections,
+        jobContext: structuredPayload.jobContext,
         strengths: strengths,
         improvements: improvements,
         companySpecific: companyAdvice,
@@ -504,26 +995,39 @@ function analyzeResumeSmartly(resumeText, companyData) {
 /**
  * Analyze resume with AI and provide company-specific suggestions
  */
-async function analyzeResumeForCompany(resumeText, companyData) {
+async function analyzeResumeForCompany(resumeText, companyData, options = {}) {
     try {
-        console.log('🤖 Analyzing resume...');
-        
-        // Use smart analysis
-        const analysis = analyzeResumeSmartly(resumeText, companyData);
-        console.log(`✅ Analysis complete! Score: ${analysis.overallScore}/100 for ${companyData.name}`);
-        
+        console.log('🤖 Analyzing resume with Gemini...');
+        const analysis = await callGeminiForResumeAnalysis(resumeText, companyData, options);
+        console.log(`✅ Gemini analysis complete! Score: ${analysis.overallScore}/100 for ${companyData.name}`);
         return analysis;
-    } catch (error) {
-        console.error('❌ Analysis failed:', error.message);
-        throw new Error('Failed to analyze resume. Please try again.');
+    } catch (geminiError) {
+        console.error('⚠️ Gemini analysis failed:', geminiError.message);
+        console.log('🔁 Falling back to local heuristic analysis.');
+        try {
+            const analysis = analyzeResumeSmartly(resumeText, companyData, options);
+            console.log(`✅ Fallback analysis complete! Score: ${analysis.overallScore}/100 for ${companyData.name}`);
+            return analysis;
+        } catch (fallbackError) {
+            console.error('❌ Fallback analysis also failed:', fallbackError.message);
+            if (fallbackError.code === 'INVALID_RESUME_INPUT') {
+                throw fallbackError;
+            }
+            throw new Error('Failed to analyze resume. Please try again.');
+        }
     }
 }
 
 /**
- * Generate ATS-friendly suggestions (removed - now in main analysis)
+ * Generate ATS-friendly suggestions from the resume text.
  */
 async function generateATSSuggestions(resumeText) {
-    return null;
+    if (typeof resumeText !== 'string' || !resumeText.trim()) {
+        throw new Error('Resume text is empty or invalid. Please upload a readable resume file.');
+    }
+
+    const analysis = analyzeResumeSmartly(resumeText, {}, {});
+    return analysis.sections?.ats || { score: 0, currentIssues: [], suggestedImprovements: [] };
 }
 
 module.exports = {
