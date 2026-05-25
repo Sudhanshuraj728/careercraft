@@ -15,7 +15,7 @@ const apiLimiter = rateLimit({
 // Strict rate limiter for AI analysis endpoints
 const aiAnalysisLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // Limit each IP to 10 AI analyses per hour
+  max: 20, // 20 analyses per hour (raised for development)
   message: {
     success: false,
     error: 'AI analysis limit reached. Please try again in an hour.'
@@ -25,10 +25,10 @@ const aiAnalysisLimiter = rateLimit({
   skipSuccessfulRequests: false
 });
 
-// Auth rate limiter (stricter for login/register)
+// Auth rate limiter — raised for development (emulator always hits from 127.0.0.1)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per windowMs
+  max: 50, // 50 attempts per 15 min (was 5 — too tight for emulator testing)
   message: {
     success: false,
     error: 'Too many authentication attempts, please try again later.'

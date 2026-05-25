@@ -177,6 +177,8 @@ let currentUser = null;
 let subscriptionStatus = null;
 const defaultSubscriptionSubtitle = "You've reached your free view limit!";
 let subscriptionPromptMessage = null;
+// Remember last company queried so we can refresh after linking LinkedIn
+let lastFetchedCompanyForEmployees = null;
 
 function hasPremiumAccess() {
     return Boolean(
@@ -541,6 +543,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (currentUser) {
             showNotification(`Welcome, ${currentUser.name}! You've successfully signed in with LinkedIn.`, 'success');
         }
+        // If we previously loaded a company, refresh its LinkedIn section
+        if (lastFetchedCompanyForEmployees) {
+            fetchCompanyEmployees(lastFetchedCompanyForEmployees).catch(err => console.error(err));
+        }
     }
     
     // LinkedIn linked to existing account
@@ -548,6 +554,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.history.replaceState({}, document.title, window.location.pathname);
         await checkAuthStatus();
         showNotification('LinkedIn linked successfully! Your profile has been connected.', 'success');
+        if (lastFetchedCompanyForEmployees) {
+            fetchCompanyEmployees(lastFetchedCompanyForEmployees).catch(err => console.error(err));
+        }
     }
     
     // LinkedIn OAuth errors
@@ -1162,6 +1171,10 @@ function displayCompanyModal(company) {
             </div>
         `}
         
+        <div class="company-section" id="companyNetworkingSection">
+            <div id="linkedinEmployeesSection"></div>
+        </div>
+
         <div class="company-actions">
             <button class="btn btn-secondary" onclick="closeModal('company')">
                 Close
@@ -1174,6 +1187,17 @@ function displayCompanyModal(company) {
     `;
     
     openModal('company');
+    // Populate LinkedIn networking section for this company (if not premium locked)
+    try {
+        if (!isLocked) {
+            const linkedinSection = document.getElementById('linkedinEmployeesSection');
+            if (linkedinSection) {
+                fetchCompanyEmployees(company.name).catch(err => console.error(err));
+            }
+        }
+    } catch (err) {
+        console.error('Error initializing LinkedIn section for company modal:', err);
+    }
 }
 
 // Apply for a job
@@ -1762,24 +1786,20 @@ function handleFileSelect(file, fileInput, analyzeBtn, fileNameDisplay) {
         return;
     }
     
-    // Validate file type - accept PDF and image formats
-    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
-    const fileName = file.name.toLowerCase();
-    const isValidFile = allowedExtensions.some(ext => fileName.endsWith(ext));
-    
-    if (!isValidFile) {
-        showNotification('Please upload a PDF or image file (JPG, PNG, etc.)', 'error');
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+        alert('Please upload a PDF file for best results.');
         return;
     }
     
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-        showNotification('File size must be less than 5MB', 'error');
+        alert('File size must be less than 5MB');
         return;
     }
     
     uploadedResume = file;
-    fileNameDisplay.textContent = `${file.name}`;
+    fileNameDisplay.textContent = `✓ ${file.name}`;
     fileNameDisplay.style.color = 'var(--primary-color)';
     analyzeBtn.disabled = false;
 }
@@ -1918,18 +1938,11 @@ async function analyzeResume() {
         }
         
         // Display results
-        renderAnalysisResults(analysisData.data);
+        displayAnalysisResults(analysisData.data);
         
-        // Fetch LinkedIn profiles for the company only for premium users
+        // Fetch LinkedIn profiles for the company
         if (analysisData.data.company) {
-            if (hasPremiumAccess()) {
-                fetchCompanyEmployees(analysisData.data.company.name);
-            } else {
-                renderLockedLinkedInSection(
-                    analysisData.data.company.name,
-                    'Upgrade to Premium to view LinkedIn employee insights for this company.'
-                );
-            }
+            fetchCompanyEmployees(analysisData.data.company.name);
         }
         
         // Close upload modal
@@ -1950,13 +1963,18 @@ async function analyzeResume() {
             name: error.name
         });
         
-        const errorMessage = error.message || 'Unable to analyze resume at this time.';
-        const analysisResults = document.getElementById('analysisResults');
-        if (analysisResults) {
-            analysisResults.innerHTML = renderAnalysisError(errorMessage);
+        closeModal('analysis');
+
+        let errorMessage = 'Failed to analyze resume. ';
+        if (error.message.includes('Network error') || error.message.includes('Failed to fetch')) {
+            errorMessage += 'Cannot connect to server. Please make sure the server is running (node server.js).';
+        } else if (error.message.includes('timeout')) {
+            errorMessage += 'Request timed out. The AI analysis is taking longer than expected. Please try again.';
+        } else {
+            errorMessage += error.message;
         }
-        
-        showNotification(errorMessage, 'error');
+
+        alert(errorMessage);
     }
 }
 
@@ -1973,9 +1991,9 @@ function renderAnalysisLoading() {
     return `
         <div class="analysis-loading">
             <div class="loader"></div>
-            <p>AI is analyzing your resume...</p>
+            <p>🤖 AI is analyzing your resume...</p>
             <p class="loading-subtext">This may take up to 30 seconds</p>
-            <p id="progressStatus" class="loading-subtext">Starting...</p>
+            <p id="progressStatus" style="margin-top: 10px; color: #888; font-size: 14px;">Starting...</p>
         </div>
     `;
 }
@@ -2048,6 +2066,136 @@ function renderSectionDetail(title, rows) {
             <span class="detail-value">${escapeHtml(row.value)}</span>
         </div>
     `).join('');
+}
+
+function displayAnalysisResults(data) {
+    const { company, analysis, atsAnalysis } = data;
+    
+    const html = `
+        <div class="analysis-header">
+            <h2>📊 Resume Analysis Results</h2>
+            ${company ? `<div class="company-badge">Tailored for ${company.name}</div>` : ''}
+        </div>
+        
+        <div class="score-display">
+            <div>
+                <div class="score-circle">
+                    <svg width="150" height="150">
+                        <circle cx="75" cy="75" r="65" stroke="rgba(255,255,255,0.1)" stroke-width="10" fill="none"/>
+                        <circle cx="75" cy="75" r="65" stroke="url(#gradient)" stroke-width="10" fill="none"
+                            stroke-dasharray="${2 * Math.PI * 65}" 
+                            stroke-dashoffset="${2 * Math.PI * 65 * (1 - analysis.overallScore / 100)}"
+                            transform="rotate(-90 75 75)"/>
+                        <defs>
+                            <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#00d9ff;stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:#7000ff;stop-opacity:1" />
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <div class="score-value">${analysis.overallScore}</div>
+                </div>
+                <div class="score-label">Overall Score</div>
+            </div>
+            
+            ${atsAnalysis ? `
+            <div>
+                <div class="score-circle">
+                    <svg width="150" height="150">
+                        <circle cx="75" cy="75" r="65" stroke="rgba(255,255,255,0.1)" stroke-width="10" fill="none"/>
+                        <circle cx="75" cy="75" r="65" stroke="#4caf50" stroke-width="10" fill="none"
+                            stroke-dasharray="${2 * Math.PI * 65}" 
+                            stroke-dashoffset="${2 * Math.PI * 65 * (1 - atsAnalysis.atsScore / 100)}"
+                            transform="rotate(-90 75 75)"/>
+                    </svg>
+                    <div class="score-value">${atsAnalysis.atsScore}</div>
+                </div>
+                <div class="score-label">ATS Score</div>
+            </div>
+            ` : ''}
+        </div>
+        
+        ${analysis.strengths && analysis.strengths.length > 0 ? `
+        <div class="analysis-section">
+            <h3><span class="section-icon">💪</span> Your Strengths</h3>
+            <div class="strengths-list">
+                ${analysis.strengths.map(strength => `
+                    <div class="strength-item">✓ ${strength}</div>
+                `).join('')}
+            </div>
+        </div>
+        ` : ''}
+        
+        ${analysis.improvements && analysis.improvements.length > 0 ? `
+        <div class="analysis-section">
+            <h3><span class="section-icon">🎯</span> Improvements Needed</h3>
+            ${analysis.improvements.map(item => `
+                <div class="improvement-item ${item.priority}-priority">
+                    <div class="improvement-header">
+                        <div class="improvement-category">${item.category}</div>
+                        <div class="priority-badge ${item.priority}">${item.priority} Priority</div>
+                    </div>
+                    <div class="improvement-issue"><strong>Issue:</strong> ${item.issue}</div>
+                    <div class="improvement-suggestion">💡 ${item.suggestion}</div>
+                </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${analysis.companySpecific && analysis.companySpecific.length > 0 ? `
+        <div class="analysis-section">
+            <h3><span class="section-icon">🎯</span> ${company ? company.name + ' Specific' : 'Company-Specific'} Suggestions</h3>
+            ${analysis.companySpecific.map(item => `
+                <div class="company-specific-item">
+                    <div class="company-specific-point">→ ${item.point}</div>
+                    <div class="company-specific-reason">${item.reason}</div>
+                </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${analysis.keywordSuggestions && analysis.keywordSuggestions.length > 0 ? `
+        <div class="analysis-section">
+            <h3><span class="section-icon">🔑</span> Keywords to Add</h3>
+            <div class="keywords-container">
+                ${analysis.keywordSuggestions.map(keyword => `
+                    <div class="keyword-tag">${keyword}</div>
+                `).join('')}
+            </div>
+        </div>
+        ` : ''}
+        
+        ${analysis.formattingTips && analysis.formattingTips.length > 0 ? `
+        <div class="analysis-section">
+            <h3><span class="section-icon">✨</span> Formatting Tips</h3>
+            <ul style="list-style: none; padding: 0;">
+                ${analysis.formattingTips.map(tip => `
+                    <li style="padding: 8px 0; color: var(--text-secondary);"> 📝 ${tip}</li>
+                `).join('')}
+            </ul>
+        </div>
+        ` : ''}
+        
+        ${analysis.summaryRecommendation ? `
+        <div class="analysis-section">
+            <h3><span class="section-icon">📝</span> Summary</h3>
+            <div class="summary-box">
+                ${analysis.summaryRecommendation}
+            </div>
+        </div>
+        ` : ''}
+        
+        <!-- LinkedIn Employees Section (will be populated dynamically) -->
+        <div id="linkedinEmployeesSection"></div>
+        
+        <div style="text-align: center; margin-top: 3rem; margin-bottom: 2rem; padding: 2rem 0; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+            <button class="btn btn-primary" onclick="closeModal('analysis'); openModal('upload')" style="min-width: 250px; font-size: 1.1rem;">
+                📄 Analyze Another Resume
+            </button>
+        </div>
+    `;
+    
+    document.getElementById('analysisResults').innerHTML = html;
 }
 
 function renderAnalysisResults(data) {
@@ -2185,8 +2333,32 @@ function renderLockedLinkedInSection(companyName, message) {
     `;
 }
 
+// Render when authentication is required (prompt sign in / connect)
+function renderAuthLinkedInSection(companyName, message) {
+    const employeesSection = document.getElementById('linkedinEmployeesSection');
+    if (!employeesSection) return;
+
+    employeesSection.innerHTML = `
+        <div class="analysis-section linkedin-connect-section">
+            <h3><span class="section-icon">🔗</span> Network with ${companyName} Employees</h3>
+            <div class="linkedin-prompt">
+                <div class="linkedin-icon"><svg width="64" height="64" viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="#0077b5" stroke-width="2"/><path d="M8 11v6M8 8.5v.01M12 13v4M16 11v6M12 11a3 3 0 013-3" stroke="#0077b5" stroke-width="2" stroke-linecap="round"/></svg></div>
+                <p><strong>${message || 'Sign in to your account to connect LinkedIn.'}</strong></p>
+                <p>Sign in or link your LinkedIn account to view employees and networking suggestions for ${companyName}.</p>
+                <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
+                    <button class="btn btn-primary" onclick="openModal('signin')">Sign In</button>
+                    <button class="btn btn-linkedin" onclick="linkLinkedIn()">Connect LinkedIn</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 // Fetch and display LinkedIn profiles of company employees
 async function fetchCompanyEmployees(companyName) {
+    // remember last fetched company for potential refresh after OAuth linking
+    lastFetchedCompanyForEmployees = companyName;
+
     const employeesSection = document.getElementById('linkedinEmployeesSection');
     
     // Show loading state
@@ -2208,12 +2380,8 @@ async function fetchCompanyEmployees(companyName) {
         const data = await response.json();
 
         if (response.status === 401 && data.requiresAuthentication) {
-            renderLockedLinkedInSection(companyName, data.error || 'Please sign in to view LinkedIn employee insights.');
-            return;
-        }
-
-        if (response.status === 403 && data.requiresSubscription) {
-            renderLockedLinkedInSection(companyName, data.message || 'Upgrade to Premium to view LinkedIn employee insights.');
+            // Prompt sign-in / LinkedIn connect for unauthenticated users
+            renderAuthLinkedInSection(companyName, data.error || 'Please sign in to view LinkedIn employee insights.');
             return;
         }
         

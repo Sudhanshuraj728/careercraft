@@ -549,7 +549,9 @@ async function callGeminiForResumeAnalysis(resumeText, companyData = {}, options
     const jobRole = options.jobRole || null;
     const jobDescription = options.jobDescription || null;
 
-    const prompt = `You are a senior resume reviewer and hiring coach. Analyze the following resume text specifically for the target company and job context. Do not invent any experience or claims; base every recommendation only on the resume text, the company profile, and the optional role/job description. The output must be valid JSON only. Use original, tailored language for each company and avoid generic repeated suggestions.
+    const prompt = `You are a highly rigorous, critical, and objective senior resume reviewer and hiring coach. Analyze the following resume text specifically for the target company and job context. 
+CRITICAL SCORING RULE: Be tough, realistic, and objective. A perfect 100/100 score is impossible. Do not give inflated scores. A standard, average-to-good resume should score between 60 and 78. A truly spectacular, elite industry-expert resume should score between 79 and 88. Only deduct or award points based on actual resume text evidence. Under no circumstances should you give a 90+ score unless the resume demonstrates outstanding, quantified impact with numbers (metrics) for every single job, has zero formatting/spacing issues, includes active GitHub/LinkedIn profiles, and directly matches 100% of the target tech stack.
+Analyze carefully based on layout, spacing, formatting, keyword density, alignment with the target company's culture/tech stack, and professional phrasing.
 
 Resume Text:
 ${trimmedResume}
@@ -583,7 +585,7 @@ Return a JSON object with these fields:
 
 Avoid adding any markdown, explanatory text, or additional wrapper fields. Only emit valid JSON.`;
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     const response = await axios.post(endpoint, {
         contents: [{
             parts: [{ text: prompt }]
@@ -627,6 +629,24 @@ function analyzeResumeSmartly(resumeText, companyData = {}, options = {}) {
     const wordCount = words.length;
     const jobContext = normalizeJobContext(companyData, options);
     const roleRelevantSkills = extractRelevantSkills(jobContext.jobText);
+    
+    // Generate company-specific strengths/improvements
+    const companyTech = {
+        'microsoft': ['Azure', 'C#', '.NET', 'TypeScript', 'React'],
+        'google': ['Go', 'Python', 'Kubernetes', 'TensorFlow', 'Angular'],
+        'amazon': ['AWS', 'Java', 'Python', 'DynamoDB', 'Lambda'],
+        'meta': ['React', 'Python', 'GraphQL', 'PyTorch', 'PHP'],
+        'apple': ['Swift', 'Objective-C', 'iOS', 'macOS', 'Metal']
+    };
+    
+    const companyKey = jobContext.companyKey;
+    const relevantTech = uniqueStrings([
+        ...(companyTech[companyKey] || []),
+        ...roleRelevantSkills
+    ]).length > 0 ? uniqueStrings([
+        ...(companyTech[companyKey] || []),
+        ...roleRelevantSkills
+    ]) : ['cloud computing', 'modern frameworks', 'scalable systems'];
     
     // Create hash from resume text for consistent but varied scoring
     const hash = resumeText.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -686,53 +706,60 @@ function analyzeResumeSmartly(resumeText, companyData = {}, options = {}) {
     
     const relevanceMatches = uniqueStrings(roleRelevantSkills.filter(skill => text.includes(skill))).length;
 
-    const keywordScore = Math.min(40, foundSkills.length * 2 + relevanceMatches * 2);
-    const structureScore = Math.min(30,
-        (hasStructure ? 12 : 0) +
-        (hasBulletPoints ? 10 : 0) +
-        (lineCount >= 20 ? 4 : 0) +
-        (/\bsummary\b/i.test(resumeText) ? 4 : 0)
-    );
-    const formattingScore = Math.min(15,
-        (hasActionVerbs ? 5 : 0) +
-        ((hasLinkedIn || hasGithub) ? 3 : 0) +
-        (wordCount >= 300 ? 4 : 0) +
-        (hasPortfolio ? 3 : 0)
-    );
-    const experienceScore = Math.min(25,
-        (hasExperience ? 8 : 0) +
-        (hasProjects ? 6 : 0) +
-        (hasAchievements ? 6 : 0) +
-        (hasMetrics ? 5 : 0)
-    );
-    const educationScore = Math.min(10,
-        (hasEducation ? 5 : 0) +
-        (hasCGPA ? 3 : 0) +
-        (hasHonors ? 2 : 0)
-    );
+    // Strictly evaluate keywords, formatting, spacing, and professional look
+    // Start from a realistic average grade of 74
+    let baseScore = 74;
+
+    // 1. Keyword density & match deductions/bonuses
+    const matchedTech = foundSkills.filter(s => relevantTech.some(t => s.includes(t.toLowerCase())));
+    if (foundSkills.length < 5) baseScore -= 10; // penalty for low skill density
+    if (matchedTech.length === 0) baseScore -= 8; // penalty for not matching target stack
+    if (foundSkills.length > 18) baseScore -= 5; // penalty for keyword stuffing / spamming skills
+    if (matchedTech.length >= 3) baseScore += 4; // bonus for strong alignment
+
+    // 2. Formatting & spacing deductions
+    if (!hasBulletPoints) baseScore -= 12; // bullet points are critical for spacing & parsing
+    if (wordCount < 280) baseScore -= 8; // too brief, lacks detail
+    if (wordCount > 850) baseScore -= 7; // too wordy, poor layout spacing
+    if (lineCount > 55) baseScore -= 5; // layout too crowded/dense
+    
+    // 3. Contact & professional presence deductions
+    if (!hasLinkedIn) baseScore -= 6;
+    if (!hasGithub && (companyKey === 'google' || companyKey === 'microsoft' || companyKey === 'amazon' || companyKey === 'meta')) baseScore -= 6;
+    if (!hasEmail || !hasPhone) baseScore -= 15; // critical contact info missing
+
+    // 4. Content & impact deductions/bonuses
+    if (!hasMetrics) baseScore -= 12; // no measurable numbers (crucial for ATS!)
+    if (!hasExperience) baseScore -= 15; // no professional experience listed
+    if (!hasProjects) baseScore -= 8; // no hands-on projects
+    if (hasMetrics && hasAchievements) baseScore += 3; // bonus for impact-driven writing
+
+    // 5. Academic credentials
+    if (!hasCGPA && hasEducation) baseScore -= 4; // missing GPA
+    if (hasCGPA && cgpaValue !== null && cgpaValue >= 9.0) baseScore += 3; // academic excellence bonus
+
+    // Limit final score to logical bounds (max 92 to keep it realistic, min 15)
+    const score = Math.min(92, Math.max(15, baseScore));
+    
+    // ATS Score is heavily focused on format + parsing + keyword match
+    let baseAts = 75;
+    if (!hasBulletPoints) baseAts -= 15;
+    if (!hasStructure) baseAts -= 10;
+    if (foundSkills.length < 6) baseAts -= 10;
+    if (!hasMetrics) baseAts -= 15;
+    if (wordCount < 300 || wordCount > 800) baseAts -= 8;
+    if (matchedTech.length >= 2) baseAts += 4;
+    const atsScore = Math.min(90, Math.max(10, baseAts));
+
+    // For breakdown display only, split the points logically
+    const keywordScore = Math.round(score * 0.35);
+    const structureScore = Math.round(score * 0.25);
+    const formattingScore = Math.round(score * 0.15);
+    const experienceScore = Math.round(score * 0.15);
+    const educationScore = Math.round(score * 0.1);
     const lengthScore = wordCount >= 300 && wordCount <= 700 ? 5 : wordCount > 700 ? 3 : wordCount >= 250 ? 2 : 0;
 
-    const score = Math.min(100, Math.max(0, keywordScore + structureScore + formattingScore + experienceScore + educationScore + lengthScore));
-    const atsScore = Math.min(100, Math.max(0, keywordScore + structureScore + formattingScore));
-
     // Generate company-specific strengths/improvements
-    const companyTech = {
-        'microsoft': ['Azure', 'C#', '.NET', 'TypeScript', 'React'],
-        'google': ['Go', 'Python', 'Kubernetes', 'TensorFlow', 'Angular'],
-        'amazon': ['AWS', 'Java', 'Python', 'DynamoDB', 'Lambda'],
-        'meta': ['React', 'Python', 'GraphQL', 'PyTorch', 'PHP'],
-        'apple': ['Swift', 'Objective-C', 'iOS', 'macOS', 'Metal']
-    };
-    
-    const companyKey = jobContext.companyKey;
-    const relevantTech = uniqueStrings([
-        ...(companyTech[companyKey] || []),
-        ...roleRelevantSkills
-    ]).length > 0 ? uniqueStrings([
-        ...(companyTech[companyKey] || []),
-        ...roleRelevantSkills
-    ]) : ['cloud computing', 'modern frameworks', 'scalable systems'];
-    
     // Build strengths - specific and personalized
     const strengths = [];
     

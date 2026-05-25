@@ -37,6 +37,22 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/careercraft';
 
+function getLinkedInCallbackUrl(req) {
+  const configuredClientUrl = (
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.CLIENT_URL ||
+    ''
+  ).trim().replace(/\/$/, '');
+
+  if (configuredClientUrl) {
+    return `${configuredClientUrl}/auth/linkedin/callback`;
+  }
+
+  const protocol = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  const host = req.get('host');
+  return `${protocol}://${host}/auth/linkedin/callback`;
+}
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: false, // Disable for development, configure properly for production
@@ -81,7 +97,12 @@ const upload = multer({ storage });
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (React Native mobile, server-to-server) or from CLIENT_URL
+    const allowed = process.env.CLIENT_URL || 'http://localhost:3000';
+    if (!origin || origin === allowed) return callback(null, true);
+    callback(null, true); // Allow all for development; restrict in production via CLIENT_URL
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -329,6 +350,272 @@ app.get('/auth/google/callback',
   }
 );
 
+// ─── Mobile Google Sign-In (React Native SDK) ────────────────────────────────
+// Accepts a Google ID token from the mobile native Google Sign-In SDK,
+// verifies it with Google, finds or creates the user, and returns a JWT.
+app.post('/api/auth/google/mobile', authLimiter, asyncHandler(async (req, res) => {
+  const { idToken } = req.body;
+  if (!idToken) {
+    return res.status(400).json({ success: false, error: 'idToken is required' });
+  }
+
+  // Verify the token with Google's tokeninfo endpoint
+  let googlePayload;
+  try {
+    const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
+    googlePayload = await verifyRes.json();
+    if (googlePayload.error) throw new Error(googlePayload.error_description || 'Invalid token');
+
+    const validAudiences = [
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_IOS_CLIENT_ID,
+      process.env.GOOGLE_ANDROID_CLIENT_ID,
+    ].filter(Boolean);
+
+    // Only enforce audience check if we have configured client IDs
+    if (validAudiences.length > 0 && !validAudiences.includes(googlePayload.aud)) {
+      logger.warn(`Google token audience mismatch: got "${googlePayload.aud}", expected one of: ${validAudiences.join(', ')}`);
+      throw new Error('Token audience mismatch');
+    }
+  } catch (err) {
+    logger.error('Google token verification failed:', err.message);
+    return res.status(401).json({ success: false, error: 'Invalid Google token' });
+  }
+
+  const { sub: googleId, email, name, picture } = googlePayload;
+  if (!email) {
+    return res.status(400).json({ success: false, error: 'Email not provided by Google' });
+  }
+
+  // Find or create user
+  let user = await User.findOne({ $or: [{ googleId }, { email: email.toLowerCase() }] });
+  if (user) {
+    if (!user.googleId) { user.googleId = googleId; await user.save(); }
+  } else {
+    user = await User.create({ googleId, email: email.toLowerCase(), name, avatar: picture });
+    logger.info(`New user created via mobile Google Sign-In: ${email}`);
+  }
+
+  // Issue JWT for stateless mobile auth
+  const jwt = require('jsonwebtoken');
+  const token = jwt.sign(
+    { userId: user._id, email: user.email },
+    process.env.JWT_SECRET || process.env.SESSION_SECRET || 'mobile-jwt-secret',
+    { expiresIn: '30d' }
+  );
+
+  res.json({
+    success: true,
+    message: 'Google Sign-In successful',
+    token,
+    user: { id: user._id, name: user.name, email: user.email, avatar: user.avatar }
+  });
+}));
+
+// Mobile Email Login — returns JWT instead of session cookie
+app.post('/api/auth/mobile/login', authLimiter, asyncHandler(async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return res.status(400).json({ success: false, error: 'Email and password are required' });
+  }
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user || !(await user.comparePassword(password))) {
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
+  }
+  const jwt = require('jsonwebtoken');
+  const token = jwt.sign(
+    { userId: user._id, email: user.email },
+    process.env.JWT_SECRET || process.env.SESSION_SECRET || 'mobile-jwt-secret',
+    { expiresIn: '30d' }
+  );
+  const subscription = await getOrCreateSubscription(user._id);
+  const subStatus = buildSubscriptionPayload(subscription);
+  res.json({
+    success: true,
+    message: 'Login successful',
+    token,
+    user: {
+      id: user._id, name: user.name, email: user.email, avatar: user.avatar,
+      isPremium: subStatus.isPremium, subscriptionPlan: subStatus.plan
+    }
+  });
+}));
+
+// Mobile Register — returns JWT instead of session cookie
+app.post('/api/auth/mobile/register', authLimiter, asyncHandler(async (req, res) => {
+  const { name, email, password } = req.body || {};
+  if (!name || !email || !password) {
+    return res.status(400).json({ success: false, error: 'Name, email and password are required' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+  }
+  const existing = await User.findOne({ email: email.toLowerCase() });
+  if (existing) {
+    return res.status(409).json({ success: false, error: 'Email already registered' });
+  }
+  const user = await User.create({ name: name.trim(), email: email.toLowerCase().trim(), password });
+  logger.info(`New user registered via mobile: ${email}`);
+  const jwt = require('jsonwebtoken');
+  const token = jwt.sign(
+    { userId: user._id, email: user.email },
+    process.env.JWT_SECRET || process.env.SESSION_SECRET || 'mobile-jwt-secret',
+    { expiresIn: '30d' }
+  );
+  res.status(201).json({
+    success: true,
+    message: 'Registration successful',
+    token,
+    user: { id: user._id, name: user.name, email: user.email, avatar: user.avatar }
+  });
+}));
+
+// Mobile JWT auth middleware — used by all protected mobile endpoints
+function mobileAuth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  console.log('mobileAuth middleware invoked');
+  console.log('Path:', req.path);
+  console.log('Authorization Header:', authHeader);
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    console.log('No token found in Authorization header');
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+  try {
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'mobile-jwt-secret';
+    const decoded = jwt.verify(token, secret);
+    console.log('Token successfully verified. Decoded userId:', decoded.userId);
+    req.mobileUserId = decoded.userId;
+    next();
+  } catch (err) {
+    console.log('Token verification failed:', err.message);
+    return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+  }
+}
+
+// GET /api/auth/mobile/me — get current user profile (mobile)
+app.get('/api/auth/mobile/me', mobileAuth, asyncHandler(async (req, res) => {
+  const user = await User.findById(req.mobileUserId).select('-password');
+  if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+  const subscription = await getOrCreateSubscription(user._id);
+  const subStatus = buildSubscriptionPayload(subscription);
+  res.json({
+    success: true,
+    user: {
+      id: user._id, name: user.name, email: user.email, avatar: user.avatar,
+      linkedinProfile: user.linkedinProfile || null,
+      isPremium: subStatus.isPremium,
+      subscriptionPlan: subStatus.plan,
+      analysesUsed: subscription.resumeAnalysesUsed,
+      analysesLimit: subscription.freeAnalysesLimit,
+      analysesRemaining: subscription.getRemainingAnalyses()
+    }
+  });
+}));
+
+// POST /api/resumes/mobile-upload — Upload resume (mobile JWT auth)
+app.post('/api/resumes/mobile-upload', mobileAuth, upload.single('resume'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'No file uploaded' });
+  }
+  const allowedTypes = [
+    'application/pdf', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain', 'image/jpeg', 'image/png'
+  ];
+  if (!allowedTypes.includes(req.file.mimetype)) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ success: false, error: 'Invalid file type. Use PDF, DOC, DOCX, TXT, or image.' });
+  }
+  res.json({
+    success: true,
+    message: 'File uploaded successfully',
+    data: {
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    }
+  });
+}));
+
+// POST /api/resumes/mobile-analyze — Analyze resume (mobile JWT auth)
+app.post('/api/resumes/mobile-analyze', mobileAuth, asyncHandler(async (req, res) => {
+  const { filename, companySlug, jobRole, jobDescription } = req.body;
+  if (!filename || !companySlug) {
+    return res.status(400).json({ success: false, error: 'filename and companySlug are required' });
+  }
+
+  const userId = req.mobileUserId;
+  let subscription = await Subscription.findOne({ userId });
+  if (!subscription) subscription = await Subscription.create({ userId });
+
+  if (!subscription.hasRemainingAnalyses()) {
+    return res.status(403).json({
+      success: false,
+      error: 'Analysis limit reached',
+      requiresSubscription: true,
+      message: 'Upgrade to Premium for unlimited analyses!'
+    });
+  }
+
+  const filePath = path.join(__dirname, 'uploads', filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, error: 'Resume file not found' });
+  }
+
+  const company = await Company.findOne({ slug: companySlug });
+  if (!company) return res.status(404).json({ success: false, error: 'Company not found' });
+
+  const resumeText = await resumeAnalyzer.extractResumeText(
+    filePath, filename.endsWith('.pdf') ? 'application/pdf' : 'text/plain'
+  );
+
+  const analysis = await resumeAnalyzer.analyzeResumeForCompany(resumeText, {
+    name: company.name, industry: company.industry, features: company.features, jobs: company.jobs
+  }, { jobRole, jobDescription });
+
+  const atsAnalysis = analysis.sections?.ats
+    ? { atsScore: analysis.sections.ats.score, currentIssues: analysis.sections.ats.currentIssues, suggestedImprovements: analysis.sections.ats.suggestedImprovements }
+    : await resumeAnalyzer.generateATSSuggestions(resumeText);
+
+  await subscription.incrementAnalyses();
+
+  res.json({
+    success: true,
+    message: 'Resume analyzed successfully',
+    data: { company: { name: company.name, industry: company.industry }, analysis, atsAnalysis },
+    subscription: {
+      plan: subscription.plan,
+      analysesUsed: subscription.resumeAnalysesUsed,
+      analysesLimit: subscription.freeAnalysesLimit,
+      remaining: subscription.getRemainingAnalyses()
+    }
+  });
+}));
+
+// GET /api/mobile/companies — Companies list (mobile, no auth required)
+app.get('/api/mobile/companies', asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const skip = (page - 1) * limit;
+  const q = req.query.q?.trim();
+  const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
+  const [companies, total] = await Promise.all([
+    Company.find(filter).select('name slug industry location size logo').skip(skip).limit(limit).lean(),
+    Company.countDocuments(filter)
+  ]);
+  res.json({ success: true, data: companies, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+}));
+
+// GET /api/mobile/subscription — Subscription status (mobile JWT)
+app.get('/api/mobile/subscription', mobileAuth, asyncHandler(async (req, res) => {
+  const subscription = await getOrCreateSubscription(req.mobileUserId);
+  const status = buildSubscriptionPayload(subscription);
+  res.json({ success: true, data: status });
+}));
+
 // LinkedIn OAuth routes
 app.get('/auth/linkedin', (req, res) => {
   // Check if LinkedIn credentials are configured
@@ -341,7 +628,7 @@ app.get('/auth/linkedin', (req, res) => {
   }
   
   // Allow LinkedIn OAuth even if not logged in (will create/link account)
-  const redirectUri = encodeURIComponent(process.env.LINKEDIN_CALLBACK_URL);
+  const redirectUri = encodeURIComponent(getLinkedInCallbackUrl(req));
   // Use OpenID Connect scopes - openid, profile, email (new LinkedIn API)
   // These are the valid scopes as of 2024+
   const scope = encodeURIComponent('openid profile email');
@@ -379,7 +666,7 @@ app.get('/auth/linkedin/callback', async (req, res) => {
         code: code,
         client_id: process.env.LINKEDIN_CLIENT_ID,
         client_secret: process.env.LINKEDIN_CLIENT_SECRET,
-        redirect_uri: process.env.LINKEDIN_CALLBACK_URL
+        redirect_uri: getLinkedInCallbackUrl(req)
       })
     });
     
@@ -695,7 +982,7 @@ app.get('/api/admin/health', requireAdmin, asyncHandler(async (req, res) => {
 
 // --- LinkedIn Integration Endpoints ---
 // GET /api/linkedin/company-employees/:companyName - Get LinkedIn profiles of company employees
-app.get('/api/linkedin/company-employees/:companyName', requirePremium, asyncHandler(async (req, res) => {
+app.get('/api/linkedin/company-employees/:companyName', requireAuth, asyncHandler(async (req, res) => {
   const { companyName } = req.params;
   const limit = parseInt(req.query.limit) || 10;
 
@@ -703,24 +990,34 @@ app.get('/api/linkedin/company-employees/:companyName', requirePremium, asyncHan
   const user = await User.findById(req.user._id).select('+linkedinAccessToken +linkedinTokenExpiry');
 
   if (!user.linkedinAccessToken) {
-    return res.json({
-      success: false,
-      linkedinNotConnected: true,
-      message: 'Please connect your LinkedIn account to see employee profiles',
-      companyName: companyName,
-      suggestions: require('./services/linkedinService').prototype.generateNetworkingSuggestions(companyName)
-    });
+    {
+      const LinkedInService = require('./services/linkedinService');
+      const linkedinService = new LinkedInService(req.user?.linkedinAccessToken);
+      const suggestions = await linkedinService.generateNetworkingSuggestions(companyName);
+      return res.json({
+        success: false,
+        linkedinNotConnected: true,
+        message: 'Please connect your LinkedIn account to see employee profiles',
+        companyName: companyName,
+        suggestions: suggestions
+      });
+    }
   }
 
   // Check if token is expired
   if (user.linkedinTokenExpiry && new Date() > user.linkedinTokenExpiry) {
-    return res.json({
-      success: false,
-      tokenExpired: true,
-      message: 'Your LinkedIn connection has expired. Please reconnect.',
-      companyName: companyName,
-      suggestions: require('./services/linkedinService').prototype.generateNetworkingSuggestions(companyName)
-    });
+    {
+      const LinkedInService = require('./services/linkedinService');
+      const linkedinService = new LinkedInService(req.user?.linkedinAccessToken);
+      const suggestions = await linkedinService.generateNetworkingSuggestions(companyName);
+      return res.json({
+        success: false,
+        tokenExpired: true,
+        message: 'Your LinkedIn connection has expired. Please reconnect.',
+        companyName: companyName,
+        suggestions: suggestions
+      });
+    }
   }
 
   const LinkedInService = require('./services/linkedinService');
@@ -746,6 +1043,69 @@ app.get('/api/linkedin/status', (req, res) => {
     profile: req.user.linkedinProfile || null
   });
 });
+
+// DEV TEST ROUTE: Fetch LinkedIn employees for a given local user email (development only)
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/dev/linkedin/company-employees/:companyName', asyncHandler(async (req, res) => {
+    const { companyName } = req.params;
+    const { email } = req.query;
+
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Missing email query param' });
+    }
+
+    const user = await User.findOne({ email }).select('+linkedinAccessToken +linkedinTokenExpiry');
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const LinkedInService = require('./services/linkedinService');
+    const linkedinService = new LinkedInService(user.linkedinAccessToken);
+
+    // Reuse the same logic as the authenticated route
+    if (!user.linkedinAccessToken) {
+      const suggestions = await linkedinService.generateNetworkingSuggestions(companyName);
+      return res.json({ success: false, linkedinNotConnected: true, suggestions });
+    }
+
+    if (user.linkedinTokenExpiry && new Date() > user.linkedinTokenExpiry) {
+      const suggestions = await linkedinService.generateNetworkingSuggestions(companyName);
+      return res.json({ success: false, tokenExpired: true, suggestions });
+    }
+
+    const result = await linkedinService.searchCompanyEmployees(companyName, parseInt(req.query.limit) || 10);
+    res.json(result);
+  }));
+}
+
+// DEV NON-API ROUTE (avoids API 404 middleware) - only in development
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/dev/linkedin/company-employees/:companyName', asyncHandler(async (req, res) => {
+    const { companyName } = req.params;
+    const { email } = req.query;
+
+    if (!email) return res.status(400).json({ success: false, error: 'Missing email' });
+
+    const user = await User.findOne({ email }).select('+linkedinAccessToken +linkedinTokenExpiry');
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const LinkedInService = require('./services/linkedinService');
+    const linkedinService = new LinkedInService(user.linkedinAccessToken);
+
+    if (!user.linkedinAccessToken) {
+      const suggestions = await linkedinService.generateNetworkingSuggestions(companyName);
+      return res.json({ success: false, linkedinNotConnected: true, suggestions });
+    }
+
+    if (user.linkedinTokenExpiry && new Date() > user.linkedinTokenExpiry) {
+      const suggestions = await linkedinService.generateNetworkingSuggestions(companyName);
+      return res.json({ success: false, tokenExpired: true, suggestions });
+    }
+
+    const result = await linkedinService.searchCompanyEmployees(companyName, parseInt(req.query.limit) || 10);
+    res.json(result);
+  }));
+}
 
 // --- Companies Endpoints ---
 
