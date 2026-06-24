@@ -1,0 +1,15 @@
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id.startsWith("org.jetbrains.kotlin")) {
+                useVersion("2.1.0")
+            }
+        }
+    }
+}
+plugins { id("com.facebook.react.settings") }
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+rootProject.name = 'CareerCraftApp'
+include ':app'
+includeBuild('../node_modules/@react-native/gradle-plugin')

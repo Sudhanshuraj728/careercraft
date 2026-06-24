@@ -1,0 +1,206 @@
+import groovy.json.JsonSlurper
+import groovy.json.JsonBuilder
+
+def patchPrefabMetadata() {
+    def cacheDir = new File(System.getProperty("user.home") + "/.gradle/caches")
+    if (cacheDir.exists()) {
+        println "[PREFAB-PATCH] Searching for prefab abi.json files in ${cacheDir.absolutePath}..."
+        cacheDir.eachFileRecurse { file ->
+            if (file.name == "abi.json") {
+                try {
+                    def content = file.text
+                    if (content.contains('"api":')) {
+                        def json = new JsonSlurper().parseText(content)
+                        if (json.api > 21) {
+                            println "[PREFAB-PATCH] Patching ${file.absolutePath} (api was ${json.api})"
+                            json.api = 21
+                            file.text = new JsonBuilder(json).toPrettyString()
+                        }
+                    }
+                } catch (Exception e) {
+                    println "[PREFAB-PATCH] Failed to patch ${file.absolutePath}: ${e.message}"
+                }
+            }
+        }
+    }
+}
+
+patchPrefabMetadata()
+
+ext {
+    buildToolsVersion = "35.0.0"
+    minSdkVersion = 24
+    compileSdkVersion = 35
+    targetSdkVersion = 34
+    ndkVersion = "26.1.10909125"
+    kotlinVersion = "1.9.25"
+}
+
+
+buildscript {
+    ext {
+        buildToolsVersion = "35.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 35
+        targetSdkVersion = 34
+        ndkVersion = "26.1.10909125"
+        kotlinVersion = "1.9.25"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    }
+}
+
+apply plugin: "com.facebook.react.rootproject"
+
+rootProject.ext.minSdkVersion = 24
+rootProject.ext.targetSdkVersion = 34
+rootProject.ext.compileSdkVersion = 35
+
+subprojects {
+    plugins.withId("com.android.library") {
+        android {
+            defaultConfig {
+                minSdkVersion = 24
+                externalNativeBuild {
+                    cmake {
+                        arguments "-DANDROID_PLATFORM=android-24", "-DCMAKE_SYSTEM_VERSION=24"
+                    }
+                }
+            }
+        }
+        try {
+            androidComponents {
+                onVariants(selector().all()) { variant ->
+                    try {
+                        variant.minSdk.setApi$gradle_core(24)
+                        println "[DEBUG-VARIANT-SET] Project: ${project.name}, Variant: ${variant.name}, minSdk is now: ${variant.minSdk.getApiLevel()}"
+                    } catch (Exception e) {
+                        println "[DEBUG-VARIANT-FAIL] Project: ${project.name}, Variant: ${variant.name}, failed to set minSdk: ${e.message}"
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+    }
+    plugins.withId("com.android.application") {
+        android {
+            defaultConfig {
+                minSdkVersion = 24
+                externalNativeBuild {
+                    cmake {
+                        arguments "-DANDROID_PLATFORM=android-24", "-DCMAKE_SYSTEM_VERSION=24"
+                    }
+                }
+            }
+        }
+        try {
+            androidComponents {
+                onVariants(selector().all()) { variant ->
+                    try {
+                        variant.minSdk.setApi$gradle_core(24)
+                        println "[DEBUG-VARIANT-SET] Project: ${project.name}, Variant: ${variant.name}, minSdk is now: ${variant.minSdk.getApiLevel()}"
+                    } catch (Exception e) {
+                        println "[DEBUG-VARIANT-FAIL] Project: ${project.name}, Variant: ${variant.name}, failed to set minSdk: ${e.message}"
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    rootProject.subprojects { subproject ->
+        if (subproject.hasProperty('android')) {
+            subproject.android {
+                defaultConfig {
+                    minSdkVersion = 24
+                    externalNativeBuild {
+                        cmake {
+                            arguments "-DANDROID_PLATFORM=android-24", "-DCMAKE_SYSTEM_VERSION=24"
+                        }
+                    }
+                }
+            }
+            if (subproject.android.hasProperty('libraryVariants')) {
+                subproject.android.libraryVariants.all { variant ->
+                    try {
+                        variant.minSdkVersion.apiLevel = 24
+                        println "[DEBUG-VARIANT] Project: ${subproject.name}, Variant: ${variant.name}, minSdkVersion set to 24"
+                    } catch (Exception e) {
+                        try {
+                            variant.mergedFlavor.minSdkVersion = subproject.android.defaultConfig.minSdkVersion
+                            println "[DEBUG-VARIANT] Project: ${subproject.name}, Variant: ${variant.name}, mergedFlavor minSdkVersion set to 24"
+                        } catch (Exception ex) {
+                            println "[DEBUG-VARIANT] Project: ${subproject.name}, Variant: ${variant.name}, failed to set minSdkVersion: ${ex.message}"
+                        }
+                    }
+                }
+            }
+            if (subproject.android.hasProperty('applicationVariants')) {
+                subproject.android.applicationVariants.all { variant ->
+                    try {
+                        variant.minSdkVersion.apiLevel = 24
+                        println "[DEBUG-VARIANT] Project: ${subproject.name}, Variant: ${variant.name}, minSdkVersion set to 24"
+                    } catch (Exception e) {
+                        try {
+                            variant.mergedFlavor.minSdkVersion = subproject.android.defaultConfig.minSdkVersion
+                            println "[DEBUG-VARIANT] Project: ${subproject.name}, Variant: ${variant.name}, mergedFlavor minSdkVersion set to 24"
+                        } catch (Exception ex) {
+                            println "[DEBUG-VARIANT] Project: ${subproject.name}, Variant: ${variant.name}, failed to set minSdkVersion: ${ex.message}"
+                        }
+                    }
+                }
+            }
+            try {
+                println "[DEBUG-MINSDK] Project: ${subproject.name}, minSdkVersion: ${subproject.android.defaultConfig.minSdkVersion.apiLevel}"
+            } catch (Exception e) {
+                println "[DEBUG-MINSDK] Project: ${subproject.name}, minSdkVersion: ${subproject.android.defaultConfig.minSdkVersion}"
+            }
+
+            // Register task to patch prefab dependencies dynamically during execution
+            def patchTask = subproject.tasks.register("patchPrefab") {
+                doLast {
+                    def cacheDir = new File(System.getProperty("user.home") + "/.gradle/caches")
+                    if (cacheDir.exists()) {
+                        println "[PREFAB-PATCH-TASK] Patching prefab abi.json files in ${cacheDir.absolutePath}..."
+                        cacheDir.eachFileRecurse { file ->
+                            if (file.name == "abi.json") {
+                                try {
+                                    def content = file.text
+                                    if (content.contains('"api":')) {
+                                        def json = new groovy.json.JsonSlurper().parseText(content)
+                                        if (json.api > 21) {
+                                            println "[PREFAB-PATCH-TASK] Patching ${file.absolutePath} (api was ${json.api})"
+                                            json.api = 21
+                                            file.text = new groovy.json.JsonBuilder(json).toPrettyString()
+                                        }
+                                    }
+                                } catch (Exception e) {
+                                    println "[PREFAB-PATCH-TASK] Failed to patch ${file.absolutePath}: ${e.message}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Make every C++ configure/JSON task depend on our dynamic patchPrefab task
+            subproject.tasks.configureEach { task ->
+                if (task.name.contains("configureCMake") || task.name.contains("generateJsonModel")) {
+                    task.dependsOn(patchTask)
+                    println "[PREFAB-PATCH-DEPENDENCY] Configured task :${subproject.name}:${task.name} to depend on patchPrefab"
+                }
+            }
+        }
+    }
+}
